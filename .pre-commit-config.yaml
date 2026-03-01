@@ -21,12 +21,13 @@ repos:
         args: [--fix=lf]
       - id: trailing-whitespace
 
+  # ALREADY IN CI ACCORDING TO GITHUB AI
   # Run pytest
-  - repo: local
-    hooks:
-      - id: pytest
-        name: pytest
-        entry: pytest
-        language: system
-        pass_filenames: false
-        always_run: true
+  # - repo: local
+  #   hooks:
+  #     - id: pytest
+  #       name: pytest
+  #       entry: pytest
+  #       language: system
+  #       pass_filenames: false
+  #       always_run: true
