@@ -74,6 +74,22 @@ hearedit/
 
 ## Getting Started
 
+
+### Download Vosk models
+
+Download and extract the following models into `./models/`:
+
+| Model | Link |
+|---|---|
+| `vosk-model-en-us-0.22` | https://alphacephei.com/vosk/models |
+| `vosk-model-spk-0.4` | https://alphacephei.com/vosk/models |
+
+```
+models/
+├── vosk-model-en-us-0.22/
+└── vosk-model-spk-0.4/
+```
+
 ### Run the threshold computation script
 
 **Option A — Local data** (LibriSpeech already downloaded):

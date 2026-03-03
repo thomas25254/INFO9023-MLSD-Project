@@ -118,14 +118,14 @@ labels  = [1, 1, ..., 0, 0, ...]
 
 ```bash
 # With data already local
-python src/milestone_1/speaker_embedding_threshold.py \
+python src/speaker_embedding_threshold.py \
     --local \
     --ds_dir ./data/LibriSpeech/ \
     --vosk_model ../models/vosk-model-en-us-0.22 \
     --spk_model  ../models/vosk-model-spk-0.4
 
 # With data downloaded automatically from GCS
-python src/milestone_1/speaker_embedding_threshold.py \
+python src/speaker_embedding_threshold.py \
     --ds_dir ./data/LibriSpeech/ \
     --vosk_model ../models/vosk-model-en-us-0.22 \
     --spk_model  ../models/vosk-model-spk-0.4
