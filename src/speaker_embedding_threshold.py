@@ -1,6 +1,8 @@
 import argparse
 import json
+import os
 import subprocess
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -8,18 +10,40 @@ from sklearn.metrics import auc, roc_curve
 from sklearn.metrics.pairwise import cosine_similarity
 from tqdm import tqdm
 from vosk import KaldiRecognizer, Model, SetLogLevel, SpkModel
-import os
-from pathlib import Path
+
 from gcs_download import sync_gcs_prefix_to_dir
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ds_dir", default="/opt/dataset/LibriSpeech/", help="LibriSpeech root containing SPEAKERS.TXT and CHAPTERS.TXT")
-    parser.add_argument("--current_ds", default="dev-clean", help="Dataset split name (e.g. dev-clean)")
-    parser.add_argument("--vosk_model", default="/opt/models/vosk-model-en-us-0.22", help="Vosk ASR model path")
-    parser.add_argument("--spk_model", default="/opt/models/vosk-model-spk-0.4", help="Vosk speaker model path")
-    parser.add_argument("--force_recompute", action="store_true", help="Ignore .npz cache and recompute embeddings")
-    parser.add_argument("--out_json", default=None, help="Output json path (default: threshold_<split>.json)")
+    parser.add_argument(
+        "--ds_dir",
+        default="/opt/dataset/LibriSpeech/",
+        help="LibriSpeech root containing SPEAKERS.TXT and CHAPTERS.TXT",
+    )
+    parser.add_argument(
+        "--current_ds", default="dev-clean", help="Dataset split name (e.g. dev-clean)"
+    )
+    parser.add_argument(
+        "--vosk_model",
+        default="/opt/models/vosk-model-en-us-0.22",
+        help="Vosk ASR model path",
+    )
+    parser.add_argument(
+        "--spk_model",
+        default="/opt/models/vosk-model-spk-0.4",
+        help="Vosk speaker model path",
+    )
+    parser.add_argument(
+        "--force_recompute",
+        action="store_true",
+        help="Ignore .npz cache and recompute embeddings",
+    )
+    parser.add_argument(
+        "--out_json",
+        default=None,
+        help="Output json path (default: threshold_<split>.json)",
+    )
     return parser.parse_args()
 
 
@@ -65,6 +89,7 @@ def build_speakers_struct(ds_dir: str, current_ds: str):
     speakers_df = pd.DataFrame(speakers_df)
     return speakers, speakers_df, DS_DIR, CURRENT_DS
 
+
 def ensure_dataset_from_gcs(ds_dir: str) -> str:
     """
     Ensure LibriSpeech metadata + dev-clean files are present locally.
@@ -97,6 +122,7 @@ def ensure_dataset_from_gcs(ds_dir: str) -> str:
     )
     return ds_dir
 
+
 def main():
     print("Running speaker embedding threshold computation...")
     args = parse_args()
@@ -111,7 +137,9 @@ def main():
     model = Model(args.vosk_model)
     spk_model = SpkModel(args.spk_model)
 
-    speakers, speakers_df, DS_DIR, CURRENT_DS = build_speakers_struct(args.ds_dir, args.current_ds)
+    speakers, speakers_df, DS_DIR, CURRENT_DS = build_speakers_struct(
+        args.ds_dir, args.current_ds
+    )
 
     def samples_in_chapter(reader_id, chapter_id):
         chapter_dir = f"{DS_DIR}{CURRENT_DS}/{reader_id}/{chapter_id}"
@@ -174,7 +202,9 @@ def main():
     def get_speaker_embeddings(speaker_id):
         samples = list(samples_of_speaker(speaker_id))  # matérialise pour compter
         embeddings = []
-        for _, _, sample_file, _ in tqdm(samples, desc=f"speaker {speaker_id}", unit="file", leave=False):
+        for _, _, sample_file, _ in tqdm(
+            samples, desc=f"speaker {speaker_id}", unit="file", leave=False
+        ):
             embeddings += embed_speaker(sample_file)
         return np.array(embeddings)
 
@@ -182,7 +212,7 @@ def main():
     speakers_embeddings = []
     embedding_filename = f"speakers_embeddings_{CURRENT_DS}.npz"
 
-    if (not args.force_recompute):
+    if not args.force_recompute:
         try:
             data = np.load(embedding_filename)
             speakers_embeddings = [data[f"arr_{i}"] for i in range(len(data.files))]
@@ -219,7 +249,9 @@ def main():
     def normalize(x):
         return x / np.linalg.norm(x, axis=1, keepdims=True)
 
-    filtered_speakers_embeddings = [normalize(emb) for emb in filtered_speakers_embeddings]
+    filtered_speakers_embeddings = [
+        normalize(emb) for emb in filtered_speakers_embeddings
+    ]
 
     # intra/inter EXACT like notebook
     intra_similarities = []
@@ -248,7 +280,9 @@ def main():
         [np.ones(len(intra_similarities)), np.zeros(len(inter_similarities))]
     )
 
-    fpr, tpr, thresholds = roc_curve(labels, scores, pos_label=1, drop_intermediate=False)
+    fpr, tpr, thresholds = roc_curve(
+        labels, scores, pos_label=1, drop_intermediate=False
+    )
     roc_auc = auc(fpr, tpr)
 
     eer_idx = np.nanargmin(np.abs(fpr - (1 - tpr)))

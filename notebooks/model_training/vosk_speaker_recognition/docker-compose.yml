@@ -1,9 +1,0 @@
-services:
-  vosk_speaker_notebook:
-    build: .
-    container_name: vosk_speaker_notebook
-    ports:
-      - "8888:8888"
-    volumes:
-      - .:/app                # your code
-    restart: unless-stopped
