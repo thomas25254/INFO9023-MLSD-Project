@@ -286,5 +286,5 @@ if __name__ == "__main__":
 """    docker run --rm -it `
 -e GOOGLE_APPLICATION_CREDENTIALS=/secrets/adc.json `
 -e GOOGLE_CLOUD_PROJECT=info9023-project-hearedit `
--v "$env:APPDATA\gcloud\application_default_credentials.json:/secrets/adc.json:ro" `
+-v "$env:APPDATA\\gcloud\\application_default_credentials.json:/secrets/adc.json:ro" `
 ml-project uv run python speaker_embedding_threshold.py"""

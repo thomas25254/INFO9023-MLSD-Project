@@ -1,0 +1,11 @@
+{
+  "split": "dev-clean",
+  "threshold": 0.43701389948028224,
+  "eer": 0.09500415372164209,
+  "auc": 0.9683308760448279,
+  "embedding_cache": "speakers_embeddings_dev-clean.npz",
+  "n_speakers_total": 40,
+  "n_speakers_after_iqr": 40,
+  "n_intra_pairs": 99943,
+  "n_inter_pairs": 3762867
+}
