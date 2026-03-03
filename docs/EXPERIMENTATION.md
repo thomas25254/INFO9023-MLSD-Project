@@ -94,11 +94,20 @@ labels  = [1, 1, ..., 0, 0, ...]
 
 ### Results
 
-| Metric | Value |
-|---|---|
-| **AUC** | 0.9823 |
-| **EER** | 0.0950 |
-| **Optimal threshold** | 0.4217 |
+| Metric | Value | Interpretation |
+|---|---|---|
+| **AUC** | 0.9823 | The model separates same-speaker from different-speaker pairs with 98.23% accuracy under the ROC curve — close to perfect (1.0) |
+| **EER** | 0.0950 | At the optimal threshold, 9.50% of pairs are misclassified in each direction — the model makes an error roughly 1 time in 10 |
+| **Optimal threshold** | 0.4217 | A cosine similarity above 0.4217 means "same speaker"; below means "different speaker" |
+
+These results indicate a **strong speaker discriminability**. An AUC of 0.98 means the embeddings produced by Vosk's speaker model are highly separable between speakers.
+
+The EER of ~9.5% is acceptable for a zero-shot system — no speaker-specific training was done, the threshold is derived purely from the LibriSpeech `dev-clean` distribution. In practice this means:
+
+- **False Acceptance Rate (FAR) ≈ 9.5%**: ~1 in 10 segments from a *different* speaker will be incorrectly assigned to a known speaker
+- **False Rejection Rate (FRR) ≈ 9.5%**: ~1 in 10 segments from the *same* speaker will be incorrectly treated as a new speaker
+
+The EER operating point is a deliberate trade-off: it treats both error types as equally costly. If the application were more sensitive to one type of error (e.g. security-critical speaker verification), the threshold could be shifted accordingly.
 
 > **Note:** exact numeric values are saved in `threshold_dev-clean.json` after running `speaker_embedding_threshold.py`. The JSON also contains `n_speakers_total`, `n_speakers_after_iqr`, `n_intra_pairs`, and `n_inter_pairs` for full reproducibility.
 
