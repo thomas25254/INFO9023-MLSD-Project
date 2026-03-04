@@ -22,7 +22,7 @@ The dataset used here is the [LibriSpeech dev-clean](https://openslr.org/12/) on
 The chosen threshold is the EER (Equal Error Rate) to have an equal rate of false acceptance and false rejection.
 
 The intra and inter speaker voice feature cosine similarity distribution overlaps quite a bit. The selection of EER gives a 9.5% error on FAR and FRR.
-![enter image description here](https://github.com/thomas25254/INFO9023-MLSD-Project/blob/dev/model_training/notebooks/model_training/vosk_speaker_recognition/app/speaker_similarity_distributions.png)
+![enter image description here](https://github.com/thomas25254/INFO9023-MLSD-Project/blob/dev/model_training_cleaning/notebooks/model_training/vosk_speaker_recognition/app/speaker_similarity_distributions.png)
 
 ## How to Run this Notebook
 
