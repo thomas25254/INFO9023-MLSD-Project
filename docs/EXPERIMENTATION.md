@@ -59,6 +59,21 @@ Similarities are computed **pair-wise on individual segments** (not on centroids
 
 The two distributions overlap in the mid-range, which is exactly where the threshold needs to be placed.
 
+### Distribution Plot
+
+![Distribution of Pairwise Cosine Similarities](pictures/speaker_similarity_distributions.png)
+
+The histogram above shows the density of pairwise cosine similarity scores for both intra-speaker (blue) and inter-speaker (orange) pairs, computed over the full LibriSpeech `dev-clean` split.
+
+**Key observations:**
+
+- The **intra-speaker distribution** (n = 99,943 pairs) is centered around a mean of **0.61** and a median of **0.63**, confirming that embeddings from the same speaker are consistently similar to one another.
+- The **inter-speaker distribution** (n = 3,762,867 pairs) is centered around a mean of **0.23** and a median of **0.21**, showing that different speakers produce clearly distinct embeddings on average.
+- The two distributions **overlap in the range [0.3, 0.55]**, forming a transition zone where classification errors are unavoidable regardless of the threshold chosen. This overlap is the core challenge of zero-shot speaker verification.
+- The **EER threshold (green vertical line at 0.437)** is placed squarely in the middle of this overlap zone, balancing false acceptances and false rejections symmetrically.
+
+The large asymmetry in pair counts (inter >> intra) is expected: for N speakers, inter-speaker pairs grow as O(N²) while intra-speaker pairs grow linearly with the number of segments per speaker.
+
 ---
 
 ## Threshold Selection
@@ -91,6 +106,20 @@ The ROC curve is computed from the binary classification problem:
 scores  = [intra_similarities..., inter_similarities...]
 labels  = [1, 1, ..., 0, 0, ...]
 ```
+
+### ROC Curve Plot
+
+![ROC Curve – Speaker Verification](pictures/roc_curve.png)
+
+The ROC curve above plots the True Positive Rate (1 − False Rejection Rate) against the False Positive Rate (False Acceptance Rate) across all possible cosine similarity thresholds.
+
+**Key observations:**
+
+- The curve rises **steeply toward the top-left corner**, indicating that the Vosk speaker embeddings are highly discriminative: the model achieves a high true positive rate at very low false positive rates.
+- The **AUC of 0.9683** means that, if we pick a random intra-speaker pair and a random inter-speaker pair, the model correctly ranks the intra-speaker pair as more similar ~97% of the time. This is close to the perfect score of 1.0.
+- The **EER operating point** (green dot) is located at approximately FPR = TPR = 0.095, confirming that the optimal threshold yields symmetric error rates of ~9.5% in both directions.
+- The **dashed diagonal** represents a random classifier (AUC = 0.5). The distance between our curve and this baseline illustrates the practical value of the Vosk speaker embeddings.
+
 
 ### Results
 

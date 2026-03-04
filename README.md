@@ -42,7 +42,12 @@ hearedit/
 │       ├── utils.py                        # Pure, testable functions (normalize, IQR filter, EER…)
 │       ├── gcs_download.py                 # GCS → local data sync utility
 │       ├── speaker_embedding_threshold.py  # Main training/threshold script
-│       └── vosk_speaker_recognition.ipynb  # EDA & prototyping notebook
+│       ├── vosk_speaker_recognition.ipynb  # EDA & prototyping notebook
+|       └── data/                           # gitignored — local LibriSpeech copy
+│          └── LibriSpeech/
+│              ├── SPEAKERS.TXT
+│              ├── CHAPTERS.TXT
+│              └── dev-clean/
 │
 ├── docs/
 │   ├── EXPERIMENTATION.md          # EDA results, similarity analysis, threshold selection
