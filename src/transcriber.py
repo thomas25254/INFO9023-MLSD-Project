@@ -12,8 +12,9 @@ class Transcriber:
         self.spk_model = SpkModel(spk_model_path)
         self.rec = KaldiRecognizer(self.model, 16000)
         self.rec.SetSpkModel(self.spk_model)
+        self.rec.SetWords(True)
+        # self.rec.SetMaxAlternatives(3)
         self.extractor = Extractor()
-        # self.rec.SetWords(True)
         self.wav = subprocess.Popen(
             [
                 "ffmpeg",
@@ -54,6 +55,6 @@ if __name__ == "__main__":
     test_file = "../../../data/debate_extract.wav"
     transcriber = Transcriber(model_path, spk_model_path, test_file)
     for trans in transcriber.transcription():
-        emb = trans['speaker_embedding']
-        text = trans['text']
+        emb = trans.speaker_embedding
+        text = trans.text()
         print(f"[{emb[0]:2f}, ..., {emb[0]:2f}] : {text}")

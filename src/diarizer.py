@@ -1,4 +1,5 @@
 import json
+import numpy as np
 from transcriber import Transcriber
 from speaker import Speaker
 
@@ -59,9 +60,13 @@ class Diarizer:
         """
 
         # get the similarities between this embedding and the speakers prototypes
-        embedding = extract["speaker_embedding"]
-        similarities = {speaker : speaker.similarity(embedding) for _, speaker
-                        in self.speakers.items()}
+        embedding = extract.speaker_embedding
+        similarities = {}
+        for _, speaker in self.speakers.items():
+            try:
+                similarities[speaker] = speaker.similarity(embedding)
+            except ValueError:
+                similarities[speaker] = np.array([[0.0]])
 
         # find the most similar
         most_similar_speaker = (None, 0)
@@ -93,8 +98,6 @@ class Diarizer:
             return most_similar_speaker[0]
 
 
-        return similarities
-
     def rename_speaker(self, old_name, new_name):
         """Rename a speaker from an old to a new name
 
@@ -111,7 +114,7 @@ class Diarizer:
         del self.speakers[old_name]
 
 
-    def correct(self, extract, speaker_name):
+    def correct_speaker(self, extract, speaker_name):
         """Correct the speaker of an extract
 
         Parameters
@@ -123,22 +126,28 @@ class Diarizer:
         """
 
         # remove from the old speaker and remove the speaker if it is empty
-        old_speaker = extract["speaker"]
+        old_speaker = extract.speaker
         old_speaker_name = old_speaker.name
-        old_speaker.chronology.pop(extract)
+        old_speaker.chronology.remove(extract)
         if len(old_speaker.chronology) == 0:
             del self.speakers[old_speaker_name]
 
+        # add it to the new one
+        self.insert(extract, speaker_name)
+
+        return
+
+    def insert(self, extract, speaker_name):
         # add it to the new speaker and create the speaker if it doesn't exist
+        speaker = None
         try:
-            self.speakers[speaker_name].insert(extract)
+            speaker = self.speakers[speaker_name]
         except KeyError:
             speaker = Speaker(new_speaker_name, self.similarity_policy,
                               self.max_hist, self.history_policy)
-            speaker.update(extract)
             self.speakers[speaker_name] = speaker
+        speaker.insert(extract)
 
-        return
 
 
 if __name__ == "__main__":
@@ -154,6 +163,5 @@ if __name__ == "__main__":
 
     # transcribe and diarize speaker step by step
     for extract in transcriber.transcription():
-        text = extract['text']
         speaker = diarizer.diarize(extract)
-        print(f"[{extract["speaker"].name}] : {extract["text"]}")
+        print(f"[{extract.speaker.name}] : {extract.text()}")

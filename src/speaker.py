@@ -86,7 +86,10 @@ class Speaker:
 
         # take the embeddings according to the history policy
         extracts = self.history_policy()
-        embeddings = [extract["speaker_embedding"] for extract in extracts]
+        embeddings = [extract.speaker_embedding for extract in extracts
+                      if extract.speaker_embedding is not None]
+        if len(embeddings) == 0:
+            raise ValueError("no previous embedding")
         # do the mean and compute similarity
         mean_embedding =  np.array(embeddings).mean(axis=0)
         similarity = cosine_similarity(mean_embedding.reshape(1, -1),
@@ -103,7 +106,7 @@ class Speaker:
             The extract to update the prototype with
         """
 
-        extract["speaker"] = self
+        extract.speaker = self
         self.chronology += [extract]
         return
 
@@ -125,8 +128,16 @@ class Speaker:
 
         insert_at = 0
         for i, ext in enumerate(self.chronology):
-            if extract["timestramp"] < ext["timestramp"]:
-                insert_at = i
+            # if the start of the new extract is after the end of the known extract then continue
+            if extract.start > ext.end:
+                insert_at = i + 1
                 break
 
         self.chronology.insert(insert_at, extract)
+        extract.speaker = self
+
+
+    def __str__(self):
+        embeddings = [extract.speaker_embedding for extract in self.chronology
+                      if extract.speaker_embedding is not None]
+        return f"{self.name} : {len(self.chronology)} extracts, {len(embeddings)} embeddings"
