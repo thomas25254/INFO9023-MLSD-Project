@@ -7,7 +7,8 @@ from speaker import Speaker
 
 class Diarizer:
     # def __init__(self, threshold_path, threshold=True):
-    def __init__(self, threshold_path, similarity_policy="mean", max_hist=10,
+    def __init__(self, threshold=None, threshold_path=None,
+                 similarity_policy="mean", max_hist=10,
                  history_policy="latest"):
         """Creates a new Diarizer
 
@@ -40,10 +41,38 @@ class Diarizer:
         self.max_hist = max_hist
         self.history_policy = history_policy
 
-        with open(threshold_path) as threshold_file:
-            data = json.load(threshold_file)
-            self.threshold = data['threshold']
-            self.speakers = {}
+        self.speakers = {}
+
+        self.threshold_path = threshold_path
+        if threshold is not None:
+            self.threshold = threshold
+        elif threshold_path is not None:
+            with open(threshold_path) as threshold_file:
+                data = json.load(threshold_file)
+                self.threshold = data['threshold']
+        else:
+            raise ValueError("Either give a threshold or a threshold_path")
+
+
+    def to_dict(self):
+        return {"similarity_policy" : self.similarity_policy,
+                "history_policy"    : self.history_policy,
+                "max_hist"          : self.max_hist,
+                "threshold"         : self.threshold,
+                "threshold_path"    : self.threshold_path,
+                "speakers"          : [speaker.to_dict() for _, speaker in
+                                       self.speakers.items()],
+               }
+
+    @classmethod
+    def from_dict(cls, data, extracts):
+        diarizer = cls(data["threshold"], data["threshold_path"],
+                       data["similarity_policy"], data["max_hist"],
+                       data["history_policy"])
+        diarizer.speakers = {speaker["name"] : Speaker.from_dict(speaker,
+                                                                 extracts) for
+                             speaker in data["speakers"]}
+        return diarizer
 
     def diarize(self, extract):
         """Find who is the speaker or if it is a new one
@@ -153,7 +182,7 @@ class Diarizer:
 if __name__ == "__main__":
     # diarizer
     threshold_path = "threshold_dev-clean.json"
-    diarizer = Diarizer(threshold_path)
+    diarizer = Diarizer(threshold_path=threshold_path)
 
     # transcriber
     model_path = "../../../vosk-model-en-us-0.22"

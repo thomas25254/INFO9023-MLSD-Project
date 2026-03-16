@@ -36,6 +36,7 @@ class Speaker:
         self.chronology = []
         self.max_hist = max_hist
 
+        self.similarity_policy_str = similarity_policy
         self.similarity_policy = None
         if similarity_policy == "mean":
             self.similarity_policy = self.mean_embedding
@@ -43,13 +44,29 @@ class Speaker:
             error_message = f"unknown similarity policy : {similarity_policy}"
             raise ValueError(error_message)
 
+        self.history_policy_str = history_policy
         self.history_policy = None
         if history_policy == "latest":
             self.history_policy  = self.latest_history
         else:
             raise ValueError(f"unknown history policy : {history_policy}")
 
-        
+
+    def to_dict(self):
+        return {"name"              : self.name,
+                "chronology"        : [extract.id for extract in
+                                       self.chronology],
+                "max_hist"          : self.max_hist,
+                "similarity_policy" : self.similarity_policy_str,
+                "history_policy"    : self.history_policy_str,
+                }
+
+    @classmethod
+    def from_dict(cls, data, extracts):
+        speaker = cls(data["name"], data["similarity_policy"],
+                      data["max_hist"], data["history_policy"])
+        speaker.chronology = [extracts[ext_id] for ext_id in data["chronology"]]
+        return speaker
 
     def similarity(self, embedding):
         """Computes the similarity according to the similarity policy"
@@ -126,10 +143,11 @@ class Speaker:
             The extract to update the prototype with
         """
 
-        insert_at = 0
+        # if none goes after this one then insert it last
+        insert_at = len(self.chronology)
         for i, ext in enumerate(self.chronology):
-            # if the start of the new extract is after the end of the known extract then continue
-            if extract.start > ext.end:
+            # insert it where the nearest but superior in time is
+            if extract.start <= ext.start:
                 insert_at = i + 1
                 break
 
@@ -140,4 +158,4 @@ class Speaker:
     def __str__(self):
         embeddings = [extract.speaker_embedding for extract in self.chronology
                       if extract.speaker_embedding is not None]
-        return f"{self.name} : {len(self.chronology)} extracts, {len(embeddings)} embeddings"
+        return f"{self.name} : {len(embeddings)} embeddings\n\textracts : {[extract.id for extract in self.chronology]}"
