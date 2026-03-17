@@ -13,45 +13,72 @@ class Transcriber:
         self.model = Model(model_path)
         self.spk_model = SpkModel(spk_model_path)
         self.timestamp = 0.0
-        self.rec = KaldiRecognizer(self.model, 16000)
-        self.rec.SetSpkModel(self.spk_model)
-        self.rec.SetWords(True)
-        # self.rec.SetMaxAlternatives(3)
+        self.rec = None
         self.extractor = Extractor()
         self.wav = None
         if file_path is not None:
-            self.open_at(file_path)
-
-
-    def open_at(self, file_path, at=0):
-        process_str = ["ffmpeg",
-                       "-loglevel", "quiet",
-                       "-i", file_path,
-                       ]
-        if at != 0:
-            process_str += ["-ss", str(at)]
-        process_str += ["-ar", "16000",
-                        "-ac", "1",
-                        "-f", "s16le",
-                        "-",
-                        ]
-        self.wav = subprocess.Popen(process_str, stdout=subprocess.PIPE)
-        self.start_at = at
+            self.open(file_path)
 
 
     def to_dict(self):
         return {"model_path"     : self.model_path,
                 "spk_model_path" : self.spk_model_path,
                 "extractor"      : self.extractor.to_dict(),
-                "timestamp"      : self.timestamp
                 }
 
     @classmethod
     def from_dict(cls, data):
         transcriber = cls(data["model_path"], data["spk_model_path"])
         transcriber.extractor = Extractor.from_dict(data["extractor"])
-        transcriber.timestamp = data["timestamp"]
+        transcriber.timestamp = 0.0
         return transcriber
+
+
+    def open(self, file_path, at=0.0, to=0.0):
+        
+        # recreate the model
+        self.rec = KaldiRecognizer(self.model, 16000)
+        self.rec.SetSpkModel(self.spk_model)
+        self.rec.SetWords(True)
+        # self.rec.SetMaxAlternatives(3)
+
+        # create the process to turn the file to raw wav form
+        process_str = ["ffmpeg",
+                       "-loglevel", "quiet",
+                       "-i", file_path,
+                       ]
+        if at != 0.0:
+            process_str += ["-ss", str(at)]
+
+        if to != 0.0:
+            process_str += ["-to", str(to)]
+
+        process_str += ["-ar", "16000",
+                        "-ac", "1",
+                        "-f", "s16le",
+                        "-",
+                        ]
+
+        self.wav = subprocess.Popen(process_str, stdout=subprocess.PIPE)
+        self.start_at = at
+
+
+    def transcribe(self):
+        while True:
+            data = self.wav.stdout.read(4000)
+            if len(data) == 0:
+                break
+            if self.rec.AcceptWaveform(data):
+                result = json.loads(self.rec.Result())
+                self.timestamp = result["result"][-1]["end"] + self.start_at
+                return result
+
+        if self.wav.poll() is None:
+            self.wav.terminate()
+            self.wav.wait()
+        result = json.loads(self.rec.Result())
+        self.timestamp = result["result"][-1]["end"] + self.start_at
+        return result
 
 
     def transcription(self):
@@ -62,16 +89,17 @@ class Transcriber:
             if self.rec.AcceptWaveform(data):
                 result = json.loads(self.rec.Result())
                 extract = self.extractor.new_extract(result, self.start_at)
-                self.timestamp = extract.end + self.start_at
+                self.timestamp = extract.end
                 yield extract
 
-        if self.wav.poll() == None:
+        if self.wav.poll() is None:
             self.wav.terminate()
             self.wav.wait()
         result = json.loads(self.rec.Result())
         extract =  self.extractor.new_extract(result, self.start_at)
-        self.timestamp = extract.end + self.start_at
+        self.timestamp = extract.end
         yield extract
+
 
 if __name__ == "__main__":
     model_path = "../../../vosk-model-en-us-0.22"

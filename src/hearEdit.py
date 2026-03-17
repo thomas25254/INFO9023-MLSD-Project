@@ -10,7 +10,6 @@ import json
 TODO
 ----
 
-- recomputing lors du split
 - corrections de texte et recomputing avec le texte connu
 - sliding windows pour le transcriber pour couper lorsque deux personnes parle sans laisser de blanc entre eux
 -  ~ essayer plusieurs policies pour la facon dont les prototypes sont faits
@@ -24,6 +23,11 @@ TODO
 class HearEdit:
     def __init__(self, threshold_path=None, model_path=None,
                  spk_model_path=None, audio_file=None):
+
+        # the file to transcribe
+        self.audio_file = audio_file
+
+        # create the transcriber
         if model_path is not None and spk_model_path is not None and audio_file is not None:
             self.transcriber = Transcriber(model_path, spk_model_path, audio_file)
             self.transcription = self.transcriber.transcription()
@@ -33,21 +37,27 @@ class HearEdit:
             self.transcription = None
             self.extractor = None
 
+        # create the diarizer
         if threshold_path is not None:
             self.diarizer = Diarizer(threshold_path=threshold_path)
         else:
             self.diarizer = None
 
+        # extract is the dictionary linking the extract ids to the extracts
         self.extracts = {}
+        # chronology is the chronological order of the extract ids
         self.chronology = []
+        # timestamp is where the transcription stoped
+        self.timestamp = 0.0
 
 
     def to_dict(self):
         return {"transcriber" : self.transcriber.to_dict(),
+                "diarizer"    : self.diarizer.to_dict(),
                 "extracts"    : {id_num : extract.to_dict() for id_num, extract
                                  in self.extracts.items()},
                 "chronology"  : self.chronology,
-                "diarizer"    : self.diarizer.to_dict(),
+                "timestamp"   : self.timestamp,
                 }
 
 
@@ -58,6 +68,7 @@ class HearEdit:
     @classmethod
     def from_dict(cls, data):
         hear_edit = cls()
+        hear_edit.timestamp = data["timestamp"]
 
         # create the transcriber
         hear_edit.transcriber = Transcriber.from_dict(data["transcriber"])
@@ -89,16 +100,20 @@ class HearEdit:
         return cls.from_dict(json.loads(json_str))
 
 
-    def timestamp(self):
-        return self.transcriber.timestamp
+    def set_audio_file(self, audio_file):
+        self.audio_file = audio_file
 
 
-    def open_at(self, file_path, at=0):
-        self.transcriber.open_at(file_path, at)
+    def open(self, file_path, at=0.0, to=0.0):
+        self.transcriber.open(file_path, at, to)
 
 
     def play(self):
+        # load where we were at
+        if self.timestamp != self.transcriber.timestamp:
+            self.transcriber.open(self.audio_file, self.timestamp)
         extract = next(self.transcription)
+        self.timestamp = self.transcriber.timestamp
         self.diarizer.diarize(extract)
         self.extracts[extract.id] = extract
         self.chronology += [extract.id]
@@ -111,11 +126,23 @@ class HearEdit:
         # split it where it should
         new_extract = extract.split(at)
 
-        # TODO comptue embeddings of both individual extracts and assign it to
+        # comptue embeddings of both individual extracts and assign it to
         # the correct speakers
+        self.transcriber.open(self.audio_file, extract.start, extract.end)
+        ext_emb = self.transcriber.transcribe()["spk"]
+        extract.speaker_embedding = ext_emb
 
-        # insert it everywhere it should
-        self.diarizer.insert(new_extract, extract.speaker.name)
+        self.transcriber.open(self.audio_file, new_extract.start, new_extract.end)
+        ext_emb = self.transcriber.transcribe()["spk"]
+        self.transcriber.timestamp = 0.0 # signify a reset when next play
+        new_extract.speaker_embedding = ext_emb
+
+        # self.diarizer.insert(new_extract, extract.speaker.name)
+        self.diarizer.remove_extract_from_speaker(extract)
+        self.diarizer.diarize(extract)
+        self.diarizer.diarize(new_extract)
+
+        # insert new one everywhere it should
         self.extracts[new_extract.id] = new_extract
         # find extract index in the chronology and add the new one next
         extract_at = 0
@@ -167,32 +194,29 @@ if __name__ == "__main__":
 
     # Then Russell
     extract = hear_edit.play()
-    hear_edit.rename_speaker(extract.speaker.name, "Russell")
-
     # But The transcriber took too much and some of Copelston response got in
     new_extract = hear_edit.split_extract(extract.id, 37)
-    hear_edit.correct_speaker(new_extract.id, "Copleston")
+    # rename the first
+    hear_edit.rename_speaker(extract.speaker.name, "Russell")
 
     # Copleston
     extract = hear_edit.play()
 
+
     # Russell
     extract = hear_edit.play()
-    # Russel is not detected because he has no embedding yet. TODO get embedding when splitting
-    hear_edit.correct_speaker(extract.id, "Russell")
-
 
     # save to json and then reload the HE instance
     he_str = hear_edit.to_json()
     hear_edit = HearEdit.from_json(he_str)
     he2_str = hear_edit.to_json()
-    print(he_str == he2_str)
+    print("jsoned hear_edit and reloaded it, both json string are the same:",
+          he_str == he2_str)
 
-    hear_edit.open_at(test_file, hear_edit.timestamp())
+    hear_edit.set_audio_file(test_file)
 
     # Russell
     extract = hear_edit.play()
-    # TODO error here on the speaker chronology, this (5) goes before 4
     hear_edit.correct_speaker(extract.id, "Russell")
 
     # End of the extract. Should send a StopIteration error

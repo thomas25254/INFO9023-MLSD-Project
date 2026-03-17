@@ -143,6 +143,15 @@ class Diarizer:
         del self.speakers[old_name]
 
 
+    def remove_extract_from_speaker(self, extract):
+        # remove from the old speaker and remove the speaker if it is empty
+        old_speaker = extract.speaker
+        old_speaker_name = old_speaker.name
+        old_speaker.chronology.remove(extract)
+        if len(old_speaker.chronology) == 0:
+            del self.speakers[old_speaker_name]
+
+
     def correct_speaker(self, extract, speaker_name):
         """Correct the speaker of an extract
 
@@ -154,13 +163,8 @@ class Diarizer:
             The name of the correct speaker
         """
 
-        # remove from the old speaker and remove the speaker if it is empty
-        old_speaker = extract.speaker
-        old_speaker_name = old_speaker.name
-        old_speaker.chronology.remove(extract)
-        if len(old_speaker.chronology) == 0:
-            del self.speakers[old_speaker_name]
-
+        # remove from the old one
+        self.remove_extract_from_speaker(extract)
         # add it to the new one
         self.insert(extract, speaker_name)
 
