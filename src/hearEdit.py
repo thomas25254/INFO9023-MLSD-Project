@@ -9,12 +9,12 @@ import json
 """
 TODO
 ----
-
-- corrections de texte et recomputing avec le texte connu
-- sliding windows pour le transcriber pour couper lorsque deux personnes parle sans laisser de blanc entre eux
--  ~ essayer plusieurs policies pour la facon dont les prototypes sont faits
-- faire un fichier de sauvegarde
+- merge two extracts
 - voir comment je peux utiliser a la fois result et final result
+- correction de texte
+- ~ apres correction de texte recomputing avec le texte connu
+- ~ sliding windows pour le transcriber pour couper lorsque deux personnes parle sans laisser de blanc entre eux
+- ~ essayer plusieurs policies pour la facon dont les prototypes sont faits
 - ~ alternatives
 - Je trouverai surement d'autres trucs en avancant
 
@@ -159,6 +159,10 @@ class HearEdit:
         self.diarizer.correct_speaker(self.extracts[extract_id], speaker_name)
 
 
+    def correct_text(self, extract_id, word_ranges, corrections):
+        extract = self.extracts[extract_id]
+        extract.correct_text(word_ranges, corrections)
+
     def rename_speaker(self, old_name, new_name):
         self.diarizer.rename_speaker(old_name, new_name)
 
@@ -189,8 +193,23 @@ if __name__ == "__main__":
 
     # First Copleston speaks
     extract = hear_edit.play()
-
     hear_edit.rename_speaker(extract.speaker.name, "Copleston")
+    """ outputs:
+    (000000)[Copleston]{0.00-20.07} : if you offer steady already through
+    experience a world that we've come to a knowledge of the existence that
+    being and then one argues the essence and existence must be identical
+    because if god's essence then god's existence were not identical then some
+    sufficient reason for his existence would have to perform beyond god
+
+    correct:
+    It is only a posteriori through our experience of the world that we come to
+    a knowledge of the existence of that being. And then one argues, the
+    essence and existence must be identical. Because if God's essence and God's
+    existence was not identical, then some sufficient reason for this existence
+    would have to be found beyond God.
+    """
+    hear_edit.correct_text(extract.id, [[0,5], [6, 6] ], ["It is only a posteriori", "our"])
+
 
     # Then Russell
     extract = hear_edit.play()

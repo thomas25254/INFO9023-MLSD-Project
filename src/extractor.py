@@ -63,6 +63,23 @@ class Extract:
         return second
 
 
+    def correct_text(self, word_ranges, corrections):
+        # TODO sort corrections and ranges according to their start position
+        offset = 0
+        for word_range, correction in zip(word_ranges, corrections):
+            word_range[0] -= offset
+            word_range[1] -= offset
+            start = self.words[word_range[0]]["start"]
+            end = self.words[word_range[1] - 1]["end"]
+            for i in range(word_range[0], word_range[1]):
+                del self.words[word_range[0]]
+            self.words.insert(word_range[0], {"word"  : correction,
+                                              "start" : start,
+                                              "end"   : end,
+                                              })
+            offset += word_range[1] - word_range[0] - 1
+
+
     def timestamped_text(self):
         words_str = [f"{word["word"]}({word["start"]:.2f}-{word["end"]:.2f})" for
                      word in self.words]
