@@ -1,7 +1,3 @@
-import copy
-
-
-
 class Extract:
     def __init__(self, extractor, extract_id, extract_dict=None):
         """Creates an extract
@@ -37,7 +33,6 @@ class Extract:
             self.start = self.words[0]["start"]
             self.end = self.words[-1]["end"]
 
-
     def to_dict(self):
         """Turn the instance into a dict
 
@@ -47,14 +42,14 @@ class Extract:
             a dictionnary with the current states of the instance
         """
 
-        return {"id"                 : self.id,
-                "speaker"            : self.speaker.name,
-                "speaker_embeddings" : self.speaker_embeddings,
-                "words"              : self.words,
-                "start"              : self.start,
-                "end"                : self.end
-               }
-
+        return {
+            "id": self.id,
+            "speaker": self.speaker.name,
+            "speaker_embeddings": self.speaker_embeddings,
+            "words": self.words,
+            "start": self.start,
+            "end": self.end,
+        }
 
     @classmethod
     def from_dict(cls, data, extractor, speakers=None):
@@ -84,9 +79,8 @@ class Extract:
         extract.speaker_embeddings = data["speaker_embeddings"]
         extract.words = data["words"]
         extract.start = data["start"]
-        extract.end   = data["end"  ]
+        extract.end = data["end"]
         return extract
-
 
     def append_text(self, extract):
         """append text of an extract to the extract
@@ -99,8 +93,10 @@ class Extract:
 
         self.words += extract.words
         self.end = extract.end
-        if(self.speaker_embeddings is not None and extract.speaker_embeddings
-           is not None):
+        if (
+            self.speaker_embeddings is not None
+            and extract.speaker_embeddings is not None
+        ):
             self.speaker_embeddings += extract.speaker_embeddings
         elif self.speaker_embeddings is None:
             self.speaker_embeddings = extract.speaker_embeddings
@@ -135,7 +131,6 @@ class Extract:
         self.speaker_embeddings = None
         return second
 
-
     def correct_text(self, corrections):
         """correct the text of an extract
 
@@ -146,7 +141,7 @@ class Extract:
         """
 
         # sort the correction according to their start
-        corrections = sorted(corrections,  key=lambda w: w[0][0])
+        corrections = sorted(corrections, key=lambda w: w[0][0])
 
         # offset becaause some words were removed
         offset = 0
@@ -155,20 +150,24 @@ class Extract:
             word_range[1] -= offset
             start = self.words[word_range[0]]["start"]
             end = self.words[word_range[1] - 1]["end"]
-            for i in range(word_range[0], word_range[1]):
+            for _ in range(word_range[0], word_range[1]):
                 del self.words[word_range[0]]
-            self.words.insert(word_range[0], {"word"  : correction,
-                                              "start" : start,
-                                              "end"   : end,
-                                              })
+            self.words.insert(
+                word_range[0],
+                {
+                    "word": correction,
+                    "start": start,
+                    "end": end,
+                },
+            )
             offset += word_range[1] - word_range[0] - 1
 
-
     def timestamped_text(self):
-        words_str = [f"{word["word"]}({word["start"]:.2f}-{word["end"]:.2f})" for
-                     word in self.words]
+        words_str = [
+            f"{word['word']}({word['start']:.2f}-{word['end']:.2f})"
+            for word in self.words
+        ]
         return " ".join(words_str)
-
 
     def text(self):
         words_str = [word["word"] for word in self.words]
@@ -176,8 +175,6 @@ class Extract:
 
     def __str__(self):
         return self.extractor.extract_string(self)
-
-
 
 
 class Extractor:
@@ -191,11 +188,12 @@ class Extractor:
         """
 
         self.next_id = 0
-        self.string_format = {"timestamp" : False,
-                              "word timestamp" : False,
-                              "embedding" : False,
-                              "id_num" : False }
-
+        self.string_format = {
+            "timestamp": False,
+            "word timestamp": False,
+            "embedding": False,
+            "id_num": False,
+        }
 
     def to_dict(self):
         """saves the instance states in a dict
@@ -206,10 +204,7 @@ class Extractor:
             the states
         """
 
-        return {"next_id"       : self.next_id,
-                "string_format" : self.string_format
-               }
-
+        return {"next_id": self.next_id, "string_format": self.string_format}
 
     @classmethod
     def from_dict(cls, data):
@@ -230,7 +225,6 @@ class Extractor:
         extractor.next_id = data["next_id"]
         extractor.string_format = data["string_format"]
         return extractor
-
 
     def new_extract(self, extract_dict, time_offset=0.0):
         """creates an extract
@@ -262,25 +256,20 @@ class Extractor:
         self.next_id += 1
         return extract
 
-
     def set_id_format(self, activate):
         self.string_format["id_num"] = activate
-
 
     def set_timestamp_format(self, activate):
         self.string_format["timestamp"] = activate
 
-
     def set_word_timestamp_format(self, activate):
         self.string_format["word timestamp"] = activate
-
 
     def stringify_extract_text(self, extract):
         if self.string_format["word timestamp"]:
             return extract.timestamped_text()
         else:
             return extract.text()
-
 
     def stringify_extract_speaker(self, extract):
         if extract.speaker is None:
@@ -290,7 +279,6 @@ class Extractor:
             return f"[{emb[0]:2f}, ..., {emb[0]:2f}]"
         else:
             return extract.speaker.name
-
 
     def extract_string(self, extract):
         speaker_str = self.stringify_extract_speaker(extract)

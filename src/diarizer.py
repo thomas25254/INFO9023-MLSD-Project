@@ -1,15 +1,21 @@
 import json
-import numpy as np
-from transcriber import Transcriber
-from speaker import Speaker
 
+import numpy as np
+
+from speaker import Speaker
+from transcriber import Transcriber
 
 
 class Diarizer:
     # def __init__(self, threshold_path, threshold=True):
-    def __init__(self, threshold=None, threshold_path=None,
-                 similarity_policy="mean", max_hist=10,
-                 history_policy="latest"):
+    def __init__(
+        self,
+        threshold=None,
+        threshold_path=None,
+        similarity_policy="mean",
+        max_hist=10,
+        history_policy="latest",
+    ):
         """Creates a new Diarizer
 
         Parameters
@@ -49,20 +55,19 @@ class Diarizer:
         elif threshold_path is not None:
             with open(threshold_path) as threshold_file:
                 data = json.load(threshold_file)
-                self.threshold = data['threshold']
+                self.threshold = data["threshold"]
         else:
             raise ValueError("Either give a threshold or a threshold_path")
 
-
     def to_dict(self):
-        return {"similarity_policy" : self.similarity_policy,
-                "history_policy"    : self.history_policy,
-                "max_hist"          : self.max_hist,
-                "threshold"         : self.threshold,
-                "threshold_path"    : self.threshold_path,
-                "speakers"          : [speaker.to_dict() for _, speaker in
-                                       self.speakers.items()],
-               }
+        return {
+            "similarity_policy": self.similarity_policy,
+            "history_policy": self.history_policy,
+            "max_hist": self.max_hist,
+            "threshold": self.threshold,
+            "threshold_path": self.threshold_path,
+            "speakers": [speaker.to_dict() for _, speaker in self.speakers.items()],
+        }
 
     @classmethod
     def from_dict(cls, data, extracts):
@@ -81,12 +86,17 @@ class Diarizer:
             a diarizer with data states
         """
 
-        diarizer = cls(data["threshold"], data["threshold_path"],
-                       data["similarity_policy"], data["max_hist"],
-                       data["history_policy"])
-        diarizer.speakers = {speaker["name"] : Speaker.from_dict(speaker,
-                                                                 extracts) for
-                             speaker in data["speakers"]}
+        diarizer = cls(
+            data["threshold"],
+            data["threshold_path"],
+            data["similarity_policy"],
+            data["max_hist"],
+            data["history_policy"],
+        )
+        diarizer.speakers = {
+            speaker["name"]: Speaker.from_dict(speaker, extracts)
+            for speaker in data["speakers"]
+        }
         return diarizer
 
     def diarize(self, extract):
@@ -115,14 +125,14 @@ class Diarizer:
         # find the most similar
         most_similar_speaker = (None, 0)
         for similarity in similarities.items():
-            if most_similar_speaker[1] < similarity[1][0,0]:
-                most_similar_speaker = (similarity[0], similarity[1][0,0])
+            if most_similar_speaker[1] < similarity[1][0, 0]:
+                most_similar_speaker = (similarity[0], similarity[1][0, 0])
 
         # if there are no speakers or if the one with biggest similarity is
         # smaller than the threshold create a new one
-        if most_similar_speaker[0] is None or (most_similar_speaker[1] <
-                                               self.threshold):
-
+        if most_similar_speaker[0] is None or (
+            most_similar_speaker[1] < self.threshold
+        ):
             # create a new speaker name that do not already exists
             new_speaker_nb = len(self.speakers) + 1
             new_speaker_name = f"speaker {new_speaker_nb}"
@@ -131,8 +141,12 @@ class Diarizer:
                 new_speaker_name = f"speaker {new_speaker_nb}"
 
             # create the new speaker, update it and return it
-            speaker = Speaker(new_speaker_name, self.similarity_policy,
-                              self.max_hist, self.history_policy)
+            speaker = Speaker(
+                new_speaker_name,
+                self.similarity_policy,
+                self.max_hist,
+                self.history_policy,
+            )
             self.speakers[new_speaker_name] = speaker
             speaker.update(extract)
             return speaker
@@ -140,7 +154,6 @@ class Diarizer:
         else:
             most_similar_speaker[0].update(extract)
             return most_similar_speaker[0]
-
 
     def rename_speaker(self, old_name, new_name):
         """Rename a speaker from an old to a new name
@@ -157,7 +170,6 @@ class Diarizer:
         self.speakers[new_name] = self.speakers[old_name]
         del self.speakers[old_name]
 
-
     def remove_extract_from_speaker(self, extract):
         # remove from the old speaker and remove the speaker if it is empty
         old_speaker = extract.speaker
@@ -165,7 +177,6 @@ class Diarizer:
         old_speaker.chronology.remove(extract)
         if len(old_speaker.chronology) == 0:
             del self.speakers[old_speaker_name]
-
 
     def correct_speaker(self, extract, speaker_name):
         """Correct the speaker of an extract
@@ -201,11 +212,11 @@ class Diarizer:
         try:
             speaker = self.speakers[speaker_name]
         except KeyError:
-            speaker = Speaker(new_speaker_name, self.similarity_policy,
-                              self.max_hist, self.history_policy)
+            speaker = Speaker(
+                speaker_name, self.similarity_policy, self.max_hist, self.history_policy
+            )
             self.speakers[speaker_name] = speaker
         speaker.insert(extract)
-
 
 
 if __name__ == "__main__":

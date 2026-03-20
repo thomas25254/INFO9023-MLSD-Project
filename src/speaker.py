@@ -1,11 +1,11 @@
-from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
-
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 class Speaker:
-    def __init__(self, name, similarity_policy="mean", max_hist=10,
-                 history_policy="latest"):
+    def __init__(
+        self, name, similarity_policy="mean", max_hist=10, history_policy="latest"
+    ):
         """Creates a new speaker
 
         Parameters
@@ -47,10 +47,9 @@ class Speaker:
         self.history_policy_str = history_policy
         self.history_policy = None
         if history_policy == "latest":
-            self.history_policy  = self.latest_history
+            self.history_policy = self.latest_history
         else:
             raise ValueError(f"unknown history policy : {history_policy}")
-
 
     def to_dict(self):
         """gives the speaker state in a dict
@@ -61,13 +60,13 @@ class Speaker:
             the states of the speaker
         """
 
-        return {"name"              : self.name,
-                "chronology"        : [extract.id for extract in
-                                       self.chronology],
-                "max_hist"          : self.max_hist,
-                "similarity_policy" : self.similarity_policy_str,
-                "history_policy"    : self.history_policy_str,
-                }
+        return {
+            "name": self.name,
+            "chronology": [extract.id for extract in self.chronology],
+            "max_hist": self.max_hist,
+            "similarity_policy": self.similarity_policy_str,
+            "history_policy": self.history_policy_str,
+        }
 
     @classmethod
     def from_dict(cls, data, extracts):
@@ -86,8 +85,12 @@ class Speaker:
             a speaker with the states in data
         """
 
-        speaker = cls(data["name"], data["similarity_policy"],
-                      data["max_hist"], data["history_policy"])
+        speaker = cls(
+            data["name"],
+            data["similarity_policy"],
+            data["max_hist"],
+            data["history_policy"],
+        )
         speaker.chronology = [extracts[ext_id] for ext_id in data["chronology"]]
         return speaker
 
@@ -107,7 +110,6 @@ class Speaker:
 
         return self.similarity_policy(embedding)
 
-
     def mean_embedding(self, embedding):
         """Computes the similarity based on the mean of the history of known
         embeddings
@@ -126,16 +128,20 @@ class Speaker:
 
         # take the embeddings according to the history policy
         extracts = self.history_policy()
-        embeddings = [emb for extract in extracts if extract.speaker_embeddings
-                      is not None for emb in extract.speaker_embeddings]
+        embeddings = [
+            emb
+            for extract in extracts
+            if extract.speaker_embeddings is not None
+            for emb in extract.speaker_embeddings
+        ]
         if len(embeddings) == 0:
             raise ValueError("no previous embedding")
         # do the mean and compute similarity
-        mean_embedding =  np.array(embeddings).mean(axis=0)
-        similarity = cosine_similarity(mean_embedding.reshape(1, -1),
-                                       np.array(embedding).reshape(1, -1))
+        mean_embedding = np.array(embeddings).mean(axis=0)
+        similarity = cosine_similarity(
+            mean_embedding.reshape(1, -1), np.array(embedding).reshape(1, -1)
+        )
         return similarity
-
 
     def update(self, extract):
         """Updates the speaker prototype based on the history policy
@@ -151,11 +157,9 @@ class Speaker:
         return
 
     def latest_history(self):
-        """Updates the speaker prototype by keeping only the latest embeddings
-        """
+        """Updates the speaker prototype by keeping only the latest embeddings"""
 
-        return self.chronology[-self.max_hist:]
-
+        return self.chronology[-self.max_hist :]
 
     def insert(self, extract):
         """Insert the extract at the right time in the chronology
@@ -177,8 +181,11 @@ class Speaker:
         self.chronology.insert(insert_at, extract)
         extract.speaker = self
 
-
     def __str__(self):
-        embeddings = [emb for extract in self.chronology if extract.speaker_embeddings
-                      is not None for emb in extract.speaker_embeddings]
+        embeddings = [
+            emb
+            for extract in self.chronology
+            if extract.speaker_embeddings is not None
+            for emb in extract.speaker_embeddings
+        ]
         return f"{self.name} : {len(embeddings)} embeddings\n\textracts : {[extract.id for extract in self.chronology]}"
