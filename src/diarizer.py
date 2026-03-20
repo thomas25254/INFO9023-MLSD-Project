@@ -66,6 +66,21 @@ class Diarizer:
 
     @classmethod
     def from_dict(cls, data, extracts):
+        """Creates a Diarizer with data states
+
+        Parameters
+        ----------
+        data : dict
+            states for the diarizer
+        extracts : dict
+            a dict linking exdtracts ids to extracts
+
+        Returns
+        -------
+        diarizer : Diarizer
+            a diarizer with data states
+        """
+
         diarizer = cls(data["threshold"], data["threshold_path"],
                        data["similarity_policy"], data["max_hist"],
                        data["history_policy"])
@@ -157,7 +172,7 @@ class Diarizer:
 
         Parameters
         ----------
-        extract : dict
+        extract : Extract
             The extract to correct
         speaker_name : str
             The name of the correct speaker
@@ -171,6 +186,16 @@ class Diarizer:
         return
 
     def insert(self, extract, speaker_name):
+        """Inserts the extract in this speaker
+
+        Parameters
+        ----------
+        extract : Extract
+            The extract to correct
+        speaker_name : str
+            The name of the speaker to insert the extract to
+        """
+
         # add it to the new speaker and create the speaker if it doesn't exist
         speaker = None
         try:

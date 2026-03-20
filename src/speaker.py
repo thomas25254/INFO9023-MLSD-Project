@@ -53,6 +53,14 @@ class Speaker:
 
 
     def to_dict(self):
+        """gives the speaker state in a dict
+
+        Returns
+        -------
+        dict
+            the states of the speaker
+        """
+
         return {"name"              : self.name,
                 "chronology"        : [extract.id for extract in
                                        self.chronology],
@@ -63,6 +71,21 @@ class Speaker:
 
     @classmethod
     def from_dict(cls, data, extracts):
+        """Creates a new speaker from a dict of its states
+
+        Parameters
+        ----------
+        data : dict
+            states of the speaker
+        extracts : dict
+            a dict linking exdtracts ids to extracts
+
+        Returns
+        -------
+        speaker : Speaker
+            a speaker with the states in data
+        """
+
         speaker = cls(data["name"], data["similarity_policy"],
                       data["max_hist"], data["history_policy"])
         speaker.chronology = [extracts[ext_id] for ext_id in data["chronology"]]
