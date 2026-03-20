@@ -89,7 +89,7 @@ class Diarizer:
         """
 
         # get the similarities between this embedding and the speakers prototypes
-        embedding = extract.speaker_embedding
+        embedding = extract.speaker_embeddings[0]
         similarities = {}
         for _, speaker in self.speakers.items():
             try:

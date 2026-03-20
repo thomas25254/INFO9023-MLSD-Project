@@ -103,8 +103,8 @@ class Speaker:
 
         # take the embeddings according to the history policy
         extracts = self.history_policy()
-        embeddings = [extract.speaker_embedding for extract in extracts
-                      if extract.speaker_embedding is not None]
+        embeddings = [emb for extract in extracts if extract.speaker_embeddings
+                      is not None for emb in extract.speaker_embeddings]
         if len(embeddings) == 0:
             raise ValueError("no previous embedding")
         # do the mean and compute similarity
@@ -156,6 +156,6 @@ class Speaker:
 
 
     def __str__(self):
-        embeddings = [extract.speaker_embedding for extract in self.chronology
-                      if extract.speaker_embedding is not None]
+        embeddings = [emb for extract in self.chronology if extract.speaker_embeddings
+                      is not None for emb in extract.speaker_embeddings]
         return f"{self.name} : {len(embeddings)} embeddings\n\textracts : {[extract.id for extract in self.chronology]}"

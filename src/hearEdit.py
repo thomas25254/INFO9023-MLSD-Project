@@ -7,20 +7,18 @@ import json
 
 
 """
-TODO
+TODO (~: maybe later)
 ----
-- merge two extracts
-- voir comment je peux utiliser a la fois result et final result
-- correction de texte
-- ~ apres correction de texte recomputing avec le texte connu
+- ~ merge two extracts automatically when they are from the same speaker
+- ~ apres correction de texte recomputing avec le texte connu (vraiment complexe)
 - ~ sliding windows pour le transcriber pour couper lorsque deux personnes parle sans laisser de blanc entre eux
 - ~ essayer plusieurs policies pour la facon dont les prototypes sont faits
 - ~ alternatives
-- Je trouverai surement d'autres trucs en avancant
 
 """
 
 class HearEdit:
+    # constructors and savers
     def __init__(self, threshold_path=None, model_path=None,
                  spk_model_path=None, audio_file=None):
 
@@ -100,6 +98,7 @@ class HearEdit:
         return cls.from_dict(json.loads(json_str))
 
 
+    # audio and transcriber control
     def set_audio_file(self, audio_file):
         self.audio_file = audio_file
 
@@ -120,6 +119,29 @@ class HearEdit:
         return extract
 
 
+    # corrections
+    def merge_extract_with_preceding(self, extract_id):
+        # find extract
+        extract = self.extracts[extract_id]
+
+        # find the previous one
+        for i, e in enumerate(self.chronology):
+            if e == extract_id:
+                extract_index = i
+                break
+        if i < 1:
+            raise ValueError("Cannot be the first extract")
+        previous_extract = self.extracts[self.chronology[i - 1]]
+
+        # append it to the previous one
+        previous_extract.append_text(extract)
+
+        # delete it
+        self.diarizer.remove_extract_from_speaker(extract)
+        del self.extracts[extract_id]
+        del self.chronology[extract_index]
+
+
     def split_extract(self, extract_id, at):
         # find extract
         extract = self.extracts[extract_id]
@@ -130,12 +152,12 @@ class HearEdit:
         # the correct speakers
         self.transcriber.open(self.audio_file, extract.start, extract.end)
         ext_emb = self.transcriber.transcribe()["spk"]
-        extract.speaker_embedding = ext_emb
+        extract.speaker_embeddings = [ext_emb]
 
         self.transcriber.open(self.audio_file, new_extract.start, new_extract.end)
         ext_emb = self.transcriber.transcribe()["spk"]
         self.transcriber.timestamp = 0.0 # signify a reset when next play
-        new_extract.speaker_embedding = ext_emb
+        new_extract.speaker_embeddings = [ext_emb]
 
         # self.diarizer.insert(new_extract, extract.speaker.name)
         self.diarizer.remove_extract_from_speaker(extract)
@@ -159,14 +181,16 @@ class HearEdit:
         self.diarizer.correct_speaker(self.extracts[extract_id], speaker_name)
 
 
-    def correct_text(self, extract_id, word_ranges, corrections):
+    def correct_text(self, extract_id, corrections):
         extract = self.extracts[extract_id]
-        extract.correct_text(word_ranges, corrections)
+        extract.correct_text(corrections)
+
 
     def rename_speaker(self, old_name, new_name):
         self.diarizer.rename_speaker(old_name, new_name)
 
 
+    # printing
     def print_chronology(self):
         for extract_id in self.chronology:
             print(self.extracts[extract_id])
@@ -208,7 +232,7 @@ if __name__ == "__main__":
     existence was not identical, then some sufficient reason for this existence
     would have to be found beyond God.
     """
-    hear_edit.correct_text(extract.id, [[0,5], [6, 6] ], ["It is only a posteriori", "our"])
+    hear_edit.correct_text(extract.id, [([0,5], "It is only a posteriori"), ([6, 6], "our")])
 
 
     # Then Russell
@@ -220,7 +244,7 @@ if __name__ == "__main__":
 
     # Copleston
     extract = hear_edit.play()
-
+    hear_edit.merge_extract_with_preceding(extract.id)
 
     # Russell
     extract = hear_edit.play()
@@ -237,6 +261,7 @@ if __name__ == "__main__":
     # Russell
     extract = hear_edit.play()
     hear_edit.correct_speaker(extract.id, "Russell")
+    hear_edit.merge_extract_with_preceding(extract.id)
 
     # End of the extract. Should send a StopIteration error
     try:

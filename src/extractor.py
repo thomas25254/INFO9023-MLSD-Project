@@ -9,25 +9,25 @@ class Extract:
 
         if extract_dict is None:
             self.speaker = None
-            self.speaker_embedding = None
+            self.speaker_embeddings = None
             self.words = None
             self.start = None
             self.end = None
         else:
             self.speaker = extract_dict["speaker"]
-            self.speaker_embedding = extract_dict["spk"]
+            self.speaker_embeddings = [extract_dict["spk"]]
             self.words = extract_dict["result"]
             self.start = self.words[0]["start"]
             self.end = self.words[-1]["end"]
 
 
     def to_dict(self):
-        return {"id"                : self.id,
-                "speaker"           : self.speaker.name,
-                "speaker_embedding" : self.speaker_embedding,
-                "words"             : self.words,
-                "start"             : self.start,
-                "end"               : self.end
+        return {"id"                 : self.id,
+                "speaker"            : self.speaker.name,
+                "speaker_embeddings" : self.speaker_embeddings,
+                "words"              : self.words,
+                "start"              : self.start,
+                "end"                : self.end
                }
 
 
@@ -38,12 +38,21 @@ class Extract:
         extract = cls(extractor, int(data["id"]))
         if speakers is not None:
             extract.speaker = speakers[data["speaker"]]
-        extract.speaker_embedding = data["speaker_embedding"]
+        extract.speaker_embeddings = data["speaker_embeddings"]
         extract.words = data["words"]
         extract.start = data["start"]
         extract.end   = data["end"  ]
         return extract
 
+
+    def append_text(self, extract):
+        self.words += extract.words
+        self.end = extract.end
+        if(self.speaker_embeddings is not None and extract.speaker_embeddings
+           is not None):
+            self.speaker_embeddings += extract.speaker_embeddings
+        elif self.speaker_embeddings is None:
+            self.speaker_embeddings = extract.speaker_embeddings
 
     def split(self, at):
         # create new id
@@ -59,14 +68,17 @@ class Extract:
         # ajust this one
         self.words = self.words[:at]
         self.end = self.words[-1]["end"]
-        self.speaker_embedding = None
+        self.speaker_embeddings = None
         return second
 
 
-    def correct_text(self, word_ranges, corrections):
-        # TODO sort corrections and ranges according to their start position
+    def correct_text(self, corrections):
+        # sort the correction according to their start
+        corrections = sorted(corrections,  key=lambda w: w[0][0])
+
+        # offset becaause some words were removed
         offset = 0
-        for word_range, correction in zip(word_ranges, corrections):
+        for word_range, correction in corrections:
             word_range[0] -= offset
             word_range[1] -= offset
             start = self.words[word_range[0]]["start"]
@@ -156,7 +168,7 @@ class Extractor:
 
     def stringify_extract_speaker(self, extract):
         if extract.speaker is None:
-            emb = extract.speaker_embedding
+            emb = extract.speaker_embeddings[0]
             if emb is None:
                 return "[None]"
             return f"[{emb[0]:2f}, ..., {emb[0]:2f}]"
