@@ -21,6 +21,24 @@ class HearEdit:
     # constructors and savers
     def __init__(self, threshold_path=None, model_path=None,
                  spk_model_path=None, audio_file=None):
+        """Creates a HearEdit instance
+
+        Parameters
+        ----------
+        threeshold_path : string
+            path of the file with the threshold
+        model_path : string
+            path of the model
+        spk_model_path : string
+            path of the speaker model
+        audio_file : string
+            path of the audio file
+
+        Returns
+        -------
+        HearEdit
+            The created hear edit instance
+        """
 
         # the file to transcribe
         self.audio_file = audio_file
@@ -50,6 +68,14 @@ class HearEdit:
 
 
     def to_dict(self):
+        """Turn the instance into a dict
+
+        Returns
+        -------
+        dict
+            a dictionnary with the current states of the instance
+        """
+
         return {"transcriber" : self.transcriber.to_dict(),
                 "diarizer"    : self.diarizer.to_dict(),
                 "extracts"    : {id_num : extract.to_dict() for id_num, extract
@@ -60,11 +86,32 @@ class HearEdit:
 
 
     def to_json(self):
+        """Turn the instance into a json string
+
+        Returns
+        -------
+        str
+            a json string with the instance state
+        """
+
         return json.dumps(self.to_dict())
 
 
     @classmethod
     def from_dict(cls, data):
+        """Create a HearEdit instance with data state
+
+        Parameters
+        ----------
+        data : dict
+            a dict with the states of the instance to create
+
+        Returns
+        -------
+        hear_edit : HearEdit
+            a HearEdit instance with data states
+        """
+
         hear_edit = cls()
         hear_edit.timestamp = data["timestamp"]
 
@@ -95,19 +142,59 @@ class HearEdit:
 
     @classmethod
     def from_json(cls, json_str):
+        """Create a HearEdit instance with json_str state
+
+        Parameters
+        ----------
+        json_str : str
+            a json str with the states of the instance to create
+
+        Returns
+        -------
+        hear_edit : HearEdit
+            a HearEdit instance with json_str states
+        """
+
         return cls.from_dict(json.loads(json_str))
 
 
     # audio and transcriber control
     def set_audio_file(self, audio_file):
+        """open the audio file
+
+        Parameters
+        ----------
+        audio_file : str
+            path to the audio file
+        """
+
         self.audio_file = audio_file
 
 
     def open(self, file_path, at=0.0, to=0.0):
+        """open the file path
+
+        Parameters
+        ----------
+        file_path : str
+            path to the audio file
+        at : float
+            from whem to open the file at
+        to : float
+            up to when
+        """
         self.transcriber.open(file_path, at, to)
 
 
     def play(self):
+        """Play the file to transcribe it and get the next extract
+
+        Returns
+        -------
+        extract : Extract
+            the next extract
+        """
+
         # load where we were at
         if self.timestamp != self.transcriber.timestamp:
             self.transcriber.open(self.audio_file, self.timestamp)
@@ -121,6 +208,14 @@ class HearEdit:
 
     # corrections
     def merge_extract_with_preceding(self, extract_id):
+        """merge the extract with the preceding one
+
+        Parameters
+        ----------
+        extract_id : int
+            the id of extract to merge with the previous one
+        """
+
         # find extract
         extract = self.extracts[extract_id]
 
@@ -143,6 +238,21 @@ class HearEdit:
 
 
     def split_extract(self, extract_id, at):
+        """split an extract at a certain word of the extract
+
+        Parameters
+        ----------
+        extract_id : int
+            the id of extract to merge with the previous one
+        at : int
+            where to split the extract at
+
+        Returns
+        -------
+        new_extract : Extract
+            the new created extract from the split
+        """
+
         # find extract
         extract = self.extracts[extract_id]
         # split it where it should
@@ -178,15 +288,44 @@ class HearEdit:
 
 
     def correct_speaker(self, extract_id, speaker_name):
+        """correct the speaker of extract
+
+        Parameters
+        ----------
+        extract_id : int
+            the id of the extract to correct
+        speaker_name : str
+            the name of the new speaker to assign the extract to
+        """
+
         self.diarizer.correct_speaker(self.extracts[extract_id], speaker_name)
 
 
     def correct_text(self, extract_id, corrections):
+        """correct the text of an extract
+
+        Parameters
+        ----------
+        extract_id : int
+            the id of the extract to correct
+        corrections : list
+            list of the corrections with the indexes to correct and the correction
+        """
+
         extract = self.extracts[extract_id]
         extract.correct_text(corrections)
 
 
     def rename_speaker(self, old_name, new_name):
+        """rename a speaker from old_name to new_name
+
+        Parameters
+        ----------
+        old_name : str
+            the name of the speaker to correct
+        new_name : str
+            the name to assign to the speaker
+        """
         self.diarizer.rename_speaker(old_name, new_name)
 
 
