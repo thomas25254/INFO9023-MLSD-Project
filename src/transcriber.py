@@ -1,14 +1,34 @@
 import json
 import os
+import platform
 import subprocess
 import tempfile
 
 from vosk import KaldiRecognizer, Model, SetLogLevel
-from train_speaker_pair_nn import load_finetuned_encoder_only, extract_embedding_from_audio
 
 from extractor import Extractor
+from train_speaker_pair_nn import (
+    extract_embedding_from_audio,
+    load_finetuned_encoder_only,
+)
 
-FFMPEG_PATH = "C:\\Users\\alexa\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1-full_build\\bin\\ffmpeg.exe"
+
+def _get_ffmpeg_path():
+    if platform.system() == "Windows":
+        import ctypes
+
+        import imageio_ffmpeg
+
+        raw = imageio_ffmpeg.get_ffmpeg_exe()
+        buf = ctypes.create_unicode_buffer(500)
+        ctypes.windll.kernel32.GetShortPathNameW(raw, buf, 500)
+        return buf.value if buf.value else raw
+    return "ffmpeg"
+
+
+FFMPEG_PATH = _get_ffmpeg_path()
+
+
 class Transcriber:
     def __init__(self, model_path, spk_model_path, file_path=None):
         SetLogLevel(-1)
@@ -39,7 +59,7 @@ class Transcriber:
         transcriber.extractor = Extractor.from_dict(data["extractor"])
         transcriber.timestamp = 0.0
         return transcriber
-    
+
     def open(self, file_path, at=0.0, to=0.0):
         self.file_path = file_path
         self.rec = KaldiRecognizer(self.model, 16000)
@@ -77,13 +97,19 @@ class Transcriber:
 
         process_str = [
             FFMPEG_PATH,
-            "-loglevel", "quiet",
+            "-loglevel",
+            "quiet",
             "-y",
-            "-i", self.file_path,
-            "-ss", str(seg_start),
-            "-to", str(seg_end),
-            "-ar", "16000",
-            "-ac", "1",
+            "-i",
+            self.file_path,
+            "-ss",
+            str(seg_start),
+            "-to",
+            str(seg_end),
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
             tmp_path,
         ]
         subprocess.run(process_str, check=True)
@@ -151,7 +177,9 @@ if __name__ == "__main__":
     test_file = "C:\\Users\\alexa\\OneDrive - Universite de Liege\\University\\2025-2026\\Q2\\MLSD\\Project\\debate_extract.wav"
     spk_model_path = "C:\\Users\\alexa\\OneDrive - Universite de Liege\\University\\2025-2026\\Q2\\MLSD\\Project\\artifacts\\ecapa_finetuned_speakerid_hidden512.pt"
     FFMPEG_PATH = "C:\\Users\\alexa\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1-full_build\\bin\\ffmpeg.exe"
-    transcriber = Transcriber(model_path, file_path=test_file, spk_model_path=spk_model_path)
+    transcriber = Transcriber(
+        model_path, file_path=test_file, spk_model_path=spk_model_path
+    )
 
     for trans in transcriber.transcription():
         emb = trans.speaker_embeddings

@@ -333,10 +333,10 @@ class HearEdit:
 
 if __name__ == "__main__":
     # hear_edit
-    threshold_path = "C:\\Users\\alexa\\OneDrive - Universite de Liege\\University\\2025-2026\\Q2\\MLSD\\Project\\INFO9023-MLSD-Project\\src\\threshold_dev-clean.json"
-    model_path = "C:\\Users\\alexa\\OneDrive - Universite de Liege\\University\\2025-2026\\Q2\\MLSD\\Project\\vosk-model-en-us-0.22"
-    spk_model_path = "C:\\Users\\alexa\\OneDrive - Universite de Liege\\University\\2025-2026\\Q2\\MLSD\\Project\\artifacts\\ecapa_finetuned_speakerid_hidden512.pt"
-    test_file = "C:\\Users\\alexa\\OneDrive - Universite de Liege\\University\\2025-2026\\Q2\\MLSD\\Project\\data\\debate_extract.wav"
+    threshold_path = "C:\\Users\\UTILIS~1\\DOCUME~1\\COLE~1\\LIGEUN~1\\MASTER~1\\Q2\\INFO90~1\\src\\THRESH~1.JSO"
+    model_path = "C:\\Users\\UTILIS~1\\DOCUME~1\\COLE~1\\LIGEUN~1\\MASTER~1\\Q2\\INFO90~1\\models\\VOSK-M~1.22"
+    spk_model_path = "C:\\Users\\UTILIS~1\\DOCUME~1\\COLE~1\\LIGEUN~1\\MASTER~1\\Q2\\INFO90~1\\ARTIFA~1\\ECAPA_~2.PT"
+    test_file = "C:\\Users\\UTILIS~1\\DOCUME~1\\COLE~1\\LIGEUN~1\\MASTER~1\\Q2\\INFO90~1\\data\\DEBATE~1.WAV"
     hear_edit = HearEdit(threshold_path, model_path, spk_model_path, test_file)
 
     hear_edit.extractor.set_timestamp_format(True)
@@ -402,5 +402,5 @@ if __name__ == "__main__":
     print()
     hear_edit.print_chronology()
 
-    print()
-    hear_edit.print_speakers()
+    # print()
+    # hear_edit.print_speakers()
