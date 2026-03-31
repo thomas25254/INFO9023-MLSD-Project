@@ -62,18 +62,26 @@ def _download_models_from_gcs():
     """Download model files from GCS if not already present locally."""
     if not GCS_BUCKET:
         return
+
+    from google.cloud import storage
+
     from gcs_download import sync_gcs_prefix_to_dir
+
+    client = storage.Client()
 
     if not os.path.isdir(MODEL_PATH):
         print(f"Downloading Vosk model from gs://{GCS_BUCKET}/{GCS_MODELS_PREFIX} ...")
-        sync_gcs_prefix_to_dir(GCS_BUCKET, GCS_MODELS_PREFIX, _MODELS_DIR)
+        sync_gcs_prefix_to_dir(GCS_BUCKET, GCS_MODELS_PREFIX, MODEL_PATH)
         print("Vosk model ready.")
 
     if not os.path.isfile(SPK_MODEL_PATH):
-        artifact_dir = os.path.dirname(SPK_MODEL_PATH)
-        artifact_prefix = GCS_ARTIFACT_PREFIX
-        print(f"Downloading speaker model from gs://{GCS_BUCKET}/{artifact_prefix} ...")
-        sync_gcs_prefix_to_dir(GCS_BUCKET, artifact_prefix, artifact_dir)
+        print(
+            f"Downloading speaker model from gs://{GCS_BUCKET}/{GCS_ARTIFACT_PREFIX} ..."
+        )
+        os.makedirs(os.path.dirname(SPK_MODEL_PATH), exist_ok=True)
+        bucket = client.bucket(GCS_BUCKET)
+        blob = bucket.blob(GCS_ARTIFACT_PREFIX)
+        blob.download_to_filename(SPK_MODEL_PATH)
         print("Speaker model ready.")
 
 

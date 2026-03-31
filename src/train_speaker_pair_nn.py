@@ -22,7 +22,6 @@ if not hasattr(torchaudio, "set_audio_backend"):
     torchaudio.set_audio_backend = lambda *args, **kwargs: None
 
 from speechbrain.inference.speaker import EncoderClassifier
-from speechbrain.utils.fetching import LocalStrategy
 
 # =========================================================
 # CONFIG
@@ -110,10 +109,13 @@ def discover_librispeech_files(root_dir: str):
 # LOAD SPEECHBRAIN ENCODER
 # =========================================================
 def load_sb_encoder(model_dir: str):
+    abs_model_dir = os.path.abspath(model_dir)
+    # Use a valid HF repo ID as source so huggingface_hub validation passes,
+    # but point savedir to our local directory which already has all the files.
+    # SpeechBrain checks savedir first — if files exist there, nothing is downloaded.
     classifier = EncoderClassifier.from_hparams(
-        source=model_dir,
-        savedir="pretrained_models/ecapa_local",
-        local_strategy=LocalStrategy.COPY,
+        source="speechbrain/spkrec-ecapa-voxceleb",
+        savedir=abs_model_dir,
     )
     classifier.device = DEVICE
     classifier.mods = classifier.mods.to(DEVICE)

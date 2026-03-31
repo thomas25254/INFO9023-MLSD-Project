@@ -27,4 +27,4 @@ EXPOSE 8080
 
 # Run from src/ so relative imports and template discovery work correctly
 WORKDIR /app/src
-CMD ["python", "app.py"]
+CMD ["gunicorn", "--bind", ":8080", "--workers", "1", "--threads", "8", "--timeout", "600", "app:app"]
