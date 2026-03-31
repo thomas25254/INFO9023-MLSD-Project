@@ -27,6 +27,17 @@ def _short(path):
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SRC = os.path.dirname(os.path.abspath(__file__))
 
+# GCS config — set these env vars in Cloud Run to enable automatic model download
+GCS_BUCKET = os.environ.get("GCS_BUCKET", "")
+GCS_MODELS_PREFIX = os.environ.get("GCS_MODELS_PREFIX", "models/vosk-model-en-us-0.22")
+GCS_ARTIFACT_PREFIX = os.environ.get(
+    "GCS_ARTIFACT_PREFIX", "artifacts/ecapa_finetuned_speakerid_hidden512.pt"
+)
+
+# Local paths where models are expected (or will be downloaded to)
+_MODELS_DIR = os.environ.get("MODELS_DIR", os.path.join(_ROOT, "models"))
+_ARTIFACTS_DIR = os.environ.get("ARTIFACTS_DIR", os.path.join(_ROOT, "artifacts"))
+
 THRESHOLD_PATH = _short(
     os.environ.get(
         "THRESHOLD_PATH",
@@ -36,15 +47,37 @@ THRESHOLD_PATH = _short(
 MODEL_PATH = _short(
     os.environ.get(
         "MODEL_PATH",
-        os.path.join(_ROOT, "models", "vosk-model-en-us-0.22"),
+        os.path.join(_MODELS_DIR, "vosk-model-en-us-0.22"),
     )
 )
 SPK_MODEL_PATH = _short(
     os.environ.get(
         "SPK_MODEL_PATH",
-        os.path.join(_ROOT, "artifacts", "ecapa_finetuned_speakerid_hidden512.pt"),
+        os.path.join(_ARTIFACTS_DIR, "ecapa_finetuned_speakerid_hidden512.pt"),
     )
 )
+
+
+def _download_models_from_gcs():
+    """Download model files from GCS if not already present locally."""
+    if not GCS_BUCKET:
+        return
+    from gcs_download import sync_gcs_prefix_to_dir
+
+    if not os.path.isdir(MODEL_PATH):
+        print(f"Downloading Vosk model from gs://{GCS_BUCKET}/{GCS_MODELS_PREFIX} ...")
+        sync_gcs_prefix_to_dir(GCS_BUCKET, GCS_MODELS_PREFIX, _MODELS_DIR)
+        print("Vosk model ready.")
+
+    if not os.path.isfile(SPK_MODEL_PATH):
+        artifact_dir = os.path.dirname(SPK_MODEL_PATH)
+        artifact_prefix = GCS_ARTIFACT_PREFIX
+        print(f"Downloading speaker model from gs://{GCS_BUCKET}/{artifact_prefix} ...")
+        sync_gcs_prefix_to_dir(GCS_BUCKET, artifact_prefix, artifact_dir)
+        print("Speaker model ready.")
+
+
+_download_models_from_gcs()
 
 _past_transcriptions = []
 
@@ -53,43 +86,6 @@ def transcribe_audio(audio_path):
     """Run HearEdit on audio_path, return list of segments with speaker info."""
     hear_edit = HearEdit(THRESHOLD_PATH, MODEL_PATH, SPK_MODEL_PATH, audio_path)
     hear_edit.extractor.set_timestamp_format(True)
-
-    # To remove --------------
-    hear_edit.extractor.set_id_format(True)
-
-    # First Copleston speaks
-    extract = hear_edit.play()
-    hear_edit.rename_speaker(extract.speaker.name, "Copleston")
-    hear_edit.correct_text(
-        extract.id, [([0, 5], "It is only a posteriori"), ([6, 6], "our")]
-    )
-
-    # Then Russell
-    extract = hear_edit.play()
-    # But The transcriber took too much and some of Copelston response got in
-    hear_edit.split_extract(extract.id, 37)
-    # rename the first
-    hear_edit.rename_speaker(extract.speaker.name, "Russell")
-
-    # Copleston
-    extract = hear_edit.play()
-    hear_edit.merge_extract_with_preceding(extract.id)
-
-    # Russell
-    extract = hear_edit.play()
-
-    # save to json and then reload the HE instance
-    he_str = hear_edit.to_json()
-    hear_edit = HearEdit.from_json(he_str)
-
-    hear_edit.set_audio_file(audio_path)
-
-    # Russell
-    extract = hear_edit.play()
-    hear_edit.correct_speaker(extract.id, "Russell")
-    hear_edit.merge_extract_with_preceding(extract.id)
-
-    # ------------------
 
     # Read remaining segments until end
     try:
@@ -190,4 +186,6 @@ def get_transcription(transcription_id):
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    debug = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    app.run(debug=debug, host="0.0.0.0", port=port)

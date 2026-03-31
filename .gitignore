@@ -7,3 +7,5 @@ __pycache__/
 *.pyc
 cloud_data
 models/
+artifacts
+pretrained_models

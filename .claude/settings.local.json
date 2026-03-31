@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/pip install:*)",
+      "Bash(cmd /c \"for %I in \\(\"\"C:\\\\Users\\\\utilisateur\\\\Documents\\\\école\\\\Liège Unnif\\\\Master 1\\\\Q2\\\\INFO9023-MLSD-Project\\\\models\\\\vosk-model-en-us-0.22\"\"\\) do echo %~sI\")",
+      "Bash(powershell -Command \"\\(New-Object -ComObject Scripting.FileSystemObject\\).GetFolder\\(''C:\\\\Users\\\\utilisateur\\\\Documents\\\\école\\\\Liège Unnif\\\\Master 1\\\\Q2\\\\INFO9023-MLSD-Project\\\\models\\\\vosk-model-en-us-0.22''\\).ShortPath\")",
+      "Bash(powershell -Command @\":*)",
+      "Bash(powershell -Command \"$fso = New-Object -ComObject Scripting.FileSystemObject; $base = ''C:\\\\Users\\\\utilisateur\\\\Documents\\\\école\\\\Liège Unnif\\\\Master 1\\\\Q2\\\\INFO9023-MLSD-Project''; Write-Host $fso.GetFolder\\($base + ''\\\\models\\\\vosk-model-en-us-0.22''\\).ShortPath; Write-Host $fso.GetFile\\($base + ''\\\\artifacts\\\\ecapa_finetuned_speakerid_hidden512.pt''\\).ShortPath; Write-Host $fso.GetFile\\($base + ''\\\\data\\\\debate_extract.wav''\\).ShortPath; Write-Host $fso.GetFile\\($base + ''\\\\src\\\\threshold_dev-clean.json''\\).ShortPath\")",
+      "Bash(python -c \"import win32api; print\\(win32api.GetShortPathName\\(''C:\\\\\\\\Users\\\\\\\\utilisateur\\\\\\\\Documents\\\\\\\\école\\\\\\\\Liège Unnif\\\\\\\\Master 1\\\\\\\\Q2\\\\\\\\INFO9023-MLSD-Project\\\\\\\\models\\\\\\\\vosk-model-en-us-0.22''\\)\\)\")",
+      "Bash(python -c \"import ctypes; GetShortPathName = ctypes.windll.kernel32.GetShortPathNameW; buf = ctypes.create_unicode_buffer\\(500\\); GetShortPathName\\(''C:\\\\\\\\Users\\\\\\\\utilisateur\\\\\\\\Documents\\\\\\\\\\\\xe9cole\\\\\\\\Li\\\\xe8ge Unnif\\\\\\\\Master 1\\\\\\\\Q2\\\\\\\\INFO9023-MLSD-Project\\\\\\\\models\\\\\\\\vosk-model-en-us-0.22'', buf, 500\\); print\\(buf.value\\)\")",
+      "Bash(python -c \":*)",
+      "Bash(powershell -Command \"Get-ChildItem -Path ''C:\\\\Users\\\\utilisateur'' -Recurse -Filter ''ffmpeg.exe'' -ErrorAction SilentlyContinue 2>null | Select-Object -First 3 FullName\")",
+      "Bash(powershell -Command \"Get-ChildItem -Path ''C:\\\\'' -Recurse -Filter ''ffmpeg.exe'' -ErrorAction SilentlyContinue 2>null | Select-Object -First 5 FullName\")",
+      "Bash(.venv/Scripts/python -c \"import imageio_ffmpeg; print\\(imageio_ffmpeg.get_ffmpeg_exe\\(\\)\\)\")",
+      "Bash(.venv/Scripts/pip freeze:*)"
+    ]
+  }
+}
