@@ -12,7 +12,9 @@
       "Bash(powershell -Command \"Get-ChildItem -Path ''C:\\\\Users\\\\utilisateur'' -Recurse -Filter ''ffmpeg.exe'' -ErrorAction SilentlyContinue 2>null | Select-Object -First 3 FullName\")",
       "Bash(powershell -Command \"Get-ChildItem -Path ''C:\\\\'' -Recurse -Filter ''ffmpeg.exe'' -ErrorAction SilentlyContinue 2>null | Select-Object -First 5 FullName\")",
       "Bash(.venv/Scripts/python -c \"import imageio_ffmpeg; print\\(imageio_ffmpeg.get_ffmpeg_exe\\(\\)\\)\")",
-      "Bash(.venv/Scripts/pip freeze:*)"
+      "Bash(.venv/Scripts/pip freeze:*)",
+      "Bash(pip install:*)",
+      "Bash(python slides/generate_slides.py)"
     ]
   }
 }
