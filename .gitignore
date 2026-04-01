@@ -10,3 +10,4 @@ models/
 artifacts
 pretrained_models
 .claude
+.claude/
