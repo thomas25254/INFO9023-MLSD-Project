@@ -76,10 +76,12 @@ INFO9023-MLSD-Project/
 │   ├── DATA.md                      # Cloud storage design decisions
 │   ├── DEPLOYMENT.md                # Docker & Cloud Run deployment guide
 │   ├── EXPERIMENTATION.md           # Threshold & fine-tuning results
+│   ├── SPEAKER_ENCODER.md           # Explain the train on speaker encoder
 │   └── pictures/                    # Plots referenced by docs
 │
 ├── slides/
 │   └── milestone_1.pdf
+│   └── milestone_2.pdf
 │
 ├── Dockerfile                       # Container definition for the API
 ├── requirements.txt                 # Dev/training dependencies
