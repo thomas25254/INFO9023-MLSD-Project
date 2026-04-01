@@ -1,17 +1,16 @@
-import os
 import glob
+import os
 import random
+import time
 from collections import defaultdict
 
 import soundfile as sf
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
 import torchaudio
-
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-import time
 
 # -------------------------------------------------
 # Compat torchaudio / speechbrain
@@ -23,7 +22,6 @@ if not hasattr(torchaudio, "set_audio_backend"):
 
 from speechbrain.inference.speaker import EncoderClassifier
 from speechbrain.utils.fetching import LocalStrategy
-
 
 # =========================================================
 # CONFIG
@@ -59,8 +57,10 @@ def set_seed(seed=42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
+
 def ensure_dir(path):
     os.makedirs(path, exist_ok=True)
+
 
 def load_audio_mono_16k(audio_path: str, max_seconds: float | None = None):
     signal, sr = sf.read(audio_path, dtype="float32")
@@ -83,6 +83,7 @@ def load_audio_mono_16k(audio_path: str, max_seconds: float | None = None):
 
     return signal
 
+
 def discover_librispeech_files(root_dir: str):
     flac_files = glob.glob(os.path.join(root_dir, "*", "*", "*.flac"))
     flac_files.sort()
@@ -104,11 +105,12 @@ def load_sb_encoder(model_dir: str):
     classifier = EncoderClassifier.from_hparams(
         source=model_dir,
         savedir="pretrained_models/ecapa_local",
-        local_strategy=LocalStrategy.COPY
+        local_strategy=LocalStrategy.COPY,
     )
     classifier.device = DEVICE
     classifier.mods = classifier.mods.to(DEVICE)
     return classifier
+
 
 def encode_audio_with_sb_trainable(classifier, signal_batch, lengths=None):
     """
@@ -139,13 +141,15 @@ def split_utterances_per_speaker(items, train_ratio=0.8, val_ratio=0.2, min_utts
     train_items = []
     val_items = []
 
-    for spk, utts in by_speaker.items():
+    for _spk, utts in by_speaker.items():
         if len(utts) < min_utts:
             continue
 
         random.shuffle(utts)
         n_train = max(1, int(len(utts) * train_ratio))
-        n_train = min(n_train, len(utts) - 1)  # garder au moins 1 utt pour val si possible
+        n_train = min(
+            n_train, len(utts) - 1
+        )  # garder au moins 1 utt pour val si possible
 
         train_utts = utts[:n_train]
         val_utts = utts[n_train:]
@@ -158,8 +162,9 @@ def split_utterances_per_speaker(items, train_ratio=0.8, val_ratio=0.2, min_utts
 
     return train_items, val_items
 
+
 def build_speaker_label_map(items):
-    speakers = sorted(list({x["speaker"] for x in items}))
+    speakers = sorted({x["speaker"] for x in items})
     spk_to_idx = {spk: i for i, spk in enumerate(speakers)}
     idx_to_spk = {i: spk for spk, i in spk_to_idx.items()}
     return spk_to_idx, idx_to_spk
@@ -179,12 +184,15 @@ class SpeakerClassificationDataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.items[idx]
-        signal = load_audio_mono_16k(item["wav"], max_seconds=self.max_seconds).squeeze(0)
+        signal = load_audio_mono_16k(item["wav"], max_seconds=self.max_seconds).squeeze(
+            0
+        )
         label = torch.tensor(self.spk_to_idx[item["speaker"]], dtype=torch.long)
         return signal, label
 
+
 def speaker_collate_fn(batch):
-    signals, labels = zip(*batch)
+    signals, labels = zip(*batch, strict=False)
 
     lengths = [x.shape[0] for x in signals]
     max_len = max(lengths)
@@ -199,7 +207,7 @@ def speaker_collate_fn(batch):
         padded.append(x)
         rel_lengths.append(cur_len / max_len)
 
-    padded = torch.stack(padded, dim=0)         # [B, T]
+    padded = torch.stack(padded, dim=0)  # [B, T]
     rel_lengths = torch.tensor(rel_lengths, dtype=torch.float32)
     labels = torch.stack(labels, dim=0)
 
@@ -216,7 +224,7 @@ class SpeakerClassifierHead(nn.Module):
             nn.Linear(emb_dim, hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.2),
-            nn.Linear(hidden_dim, num_speakers)
+            nn.Linear(hidden_dim, num_speakers),
         )
 
     def forward(self, emb):
@@ -226,7 +234,9 @@ class SpeakerClassifierHead(nn.Module):
 # =========================================================
 # TRAIN / EVAL
 # =========================================================
-def run_epoch_speakerid(sb_encoder, classifier_head, loader, criterion, optimizer=None, epoch_desc=""):
+def run_epoch_speakerid(
+    sb_encoder, classifier_head, loader, criterion, optimizer=None, epoch_desc=""
+):
     is_train = optimizer is not None
 
     sb_encoder.mods.compute_features.eval()
@@ -270,11 +280,9 @@ def run_epoch_speakerid(sb_encoder, classifier_head, loader, criterion, optimize
         avg_loss = total_loss / (batch_idx + 1)
         acc = correct / max(1, total)
 
-        pbar.set_postfix({
-            "loss": f"{avg_loss:.4f}",
-            "acc": f"{acc:.4f}",
-            "bs": labels.size(0)
-        })
+        pbar.set_postfix(
+            {"loss": f"{avg_loss:.4f}", "acc": f"{acc:.4f}", "bs": labels.size(0)}
+        )
 
     avg_loss = total_loss / max(1, len(loader))
     acc = correct / max(1, total)
@@ -303,9 +311,7 @@ def train_speaker_id_finetune():
     print(f"Nombre total de fichiers audio trouvés: {len(all_items)}")
 
     train_items, val_items = split_utterances_per_speaker(
-        all_items,
-        train_ratio=TRAIN_UTT_RATIO,
-        val_ratio=VAL_UTT_RATIO
+        all_items, train_ratio=TRAIN_UTT_RATIO, val_ratio=VAL_UTT_RATIO
     )
 
     # IMPORTANT:
@@ -320,8 +326,12 @@ def train_speaker_id_finetune():
     print(f"Val utterances:   {len(val_items)}")
     print(f"Nombre de speakers train: {len(spk_to_idx)}")
 
-    train_dataset = SpeakerClassificationDataset(train_items, spk_to_idx, max_seconds=MAX_AUDIO_SECONDS)
-    val_dataset = SpeakerClassificationDataset(val_items, spk_to_idx, max_seconds=MAX_AUDIO_SECONDS)
+    train_dataset = SpeakerClassificationDataset(
+        train_items, spk_to_idx, max_seconds=MAX_AUDIO_SECONDS
+    )
+    val_dataset = SpeakerClassificationDataset(
+        val_items, spk_to_idx, max_seconds=MAX_AUDIO_SECONDS
+    )
 
     print(f"Taille train_dataset: {len(train_dataset)}")
     print(f"Taille val_dataset:   {len(val_dataset)}")
@@ -331,13 +341,10 @@ def train_speaker_id_finetune():
         train_dataset,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        collate_fn=speaker_collate_fn
+        collate_fn=speaker_collate_fn,
     )
     val_loader = DataLoader(
-        val_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=False,
-        collate_fn=speaker_collate_fn
+        val_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=speaker_collate_fn
     )
 
     print(f"Nb batches train:    {len(train_loader)}")
@@ -345,7 +352,9 @@ def train_speaker_id_finetune():
     sb_encoder = load_sb_encoder(MODEL_DIR)
 
     # détecter dimension embedding
-    tmp_signal = load_audio_mono_16k(train_items[0]["wav"], max_seconds=MAX_AUDIO_SECONDS).to(DEVICE)
+    tmp_signal = load_audio_mono_16k(
+        train_items[0]["wav"], max_seconds=MAX_AUDIO_SECONDS
+    ).to(DEVICE)
     tmp_lengths = torch.tensor([1.0], dtype=torch.float32, device=DEVICE)
     with torch.no_grad():
         tmp_emb = encode_audio_with_sb_trainable(sb_encoder, tmp_signal, tmp_lengths)
@@ -354,17 +363,17 @@ def train_speaker_id_finetune():
     print(f"Dimension embedding détectée: {emb_dim}")
 
     classifier_head = SpeakerClassifierHead(
-        emb_dim=emb_dim,
-        num_speakers=len(spk_to_idx),
-        hidden_dim=CLASSIFIER_HIDDEN_DIM
+        emb_dim=emb_dim, num_speakers=len(spk_to_idx), hidden_dim=CLASSIFIER_HIDDEN_DIM
     ).to(DEVICE)
 
     criterion = nn.CrossEntropyLoss()
 
-    optimizer = optim.Adam([
-        {"params": sb_encoder.mods.embedding_model.parameters(), "lr": LR_ENCODER},
-        {"params": classifier_head.parameters(), "lr": LR_CLASSIFIER},
-    ])
+    optimizer = optim.Adam(
+        [
+            {"params": sb_encoder.mods.embedding_model.parameters(), "lr": LR_ENCODER},
+            {"params": classifier_head.parameters(), "lr": LR_CLASSIFIER},
+        ]
+    )
 
     best_val_acc = -1.0
 
@@ -377,7 +386,7 @@ def train_speaker_id_finetune():
             train_loader,
             criterion,
             optimizer=optimizer,
-            epoch_desc=f"Train {epoch+1}/{EPOCHS}"
+            epoch_desc=f"Train {epoch + 1}/{EPOCHS}",
         )
 
         val_metrics = run_epoch_speakerid(
@@ -386,13 +395,13 @@ def train_speaker_id_finetune():
             val_loader,
             criterion,
             optimizer=None,
-            epoch_desc=f"Val   {epoch+1}/{EPOCHS}"
+            epoch_desc=f"Val   {epoch + 1}/{EPOCHS}",
         )
 
         dt = time.time() - t0
 
         print(
-            f"\n[Epoch {epoch+1}/{EPOCHS}] "
+            f"\n[Epoch {epoch + 1}/{EPOCHS}] "
             f"train_loss={train_metrics['loss']:.4f} "
             f"train_acc={train_metrics['acc']:.4f} | "
             f"val_loss={val_metrics['loss']:.4f} "
@@ -404,10 +413,10 @@ def train_speaker_id_finetune():
             best_val_acc = val_metrics["acc"]
             torch.save(sb_encoder.mods.embedding_model.state_dict(), BEST_ENCODER_PATH)
             torch.save(classifier_head.state_dict(), BEST_CLASSIFIER_PATH)
-            torch.save({
-                "spk_to_idx": spk_to_idx,
-                "idx_to_spk": idx_to_spk
-            }, SPEAKER_LABELS_PATH)
+            torch.save(
+                {"spk_to_idx": spk_to_idx, "idx_to_spk": idx_to_spk},
+                SPEAKER_LABELS_PATH,
+            )
             print("Meilleurs poids sauvegardés.")
 
     print("\nEntraînement terminé.")
@@ -428,6 +437,7 @@ def load_finetuned_encoder_only():
     )
     sb_encoder.mods.embedding_model.eval()
     return sb_encoder
+
 
 def extract_embedding_from_audio(sb_encoder, audio_path):
     signal = load_audio_mono_16k(audio_path, max_seconds=MAX_AUDIO_SECONDS).to(DEVICE)
