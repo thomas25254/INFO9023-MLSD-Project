@@ -1,8 +1,10 @@
-# HearEdit 🎙️
+# HearEdit
 
 > **INFO9023 — Machine Learning Systems Design**
 
-HearEdit is an automatic **speaker diarization and transcription** pipeline. Given an audio recording of a conversation, it identifies *who spoke when*, transcribes the speech, and assigns each segment to a speaker — even speakers never seen during training.
+HearEdit is an automatic **speaker diarization and transcription** pipeline. Given an audio recording of a conversation, it identifies *who spoke when*, transcribes the speech, and assigns each segment to a speaker — including speakers never seen during training.
+
+A **REST API** wraps the pipeline and is deployed on **Google Cloud Run**, making it callable from any machine over HTTP : https://hearedit-api-726024632692.europe-west1.run.app/
 
 ---
 
@@ -10,117 +12,163 @@ HearEdit is an automatic **speaker diarization and transcription** pipeline. Giv
 
 - [Use Case](#use-case)
 - [Project Structure](#project-structure)
+- [System Overview](#system-overview)
 - [Getting Started](#getting-started)
 - [Data](#data)
-- [ML Model](#ml-model)
+- [ML Models](#ml-models)
+- [REST API](#rest-api)
 - [CI/CD](#cicd)
 - [Documentation](#documentation)
-- [Milestones](#milestones)
 
 ---
 
 ## Use Case
 
-Many real-world recordings (meetings, interviews, podcasts, lectures) involve multiple speakers. HearEdit automatically segments and labels those recordings by speaker identity, producing a structured transcript. The core ML component is a **speaker verification model** based on cosine similarity of voice embeddings extracted by [Vosk](https://alphacephei.com/vosk/).
+Many real-world recordings — meetings, interviews, podcasts, lectures — involve multiple speakers. HearEdit automatically segments and labels those recordings by speaker identity, producing a structured transcript with:
 
-At inference time, each new audio segment is compared to known speaker prototypes. If the cosine similarity exceeds a learned threshold, it is assigned to that speaker; otherwise a new speaker is created. The threshold is determined empirically on the LibriSpeech `dev-clean` dataset using the **Equal Error Rate (EER)** criterion.
+- Per-segment **speaker labels** (e.g. `speaker 1`, `speaker 2`, or user-assigned names)
+- **Timestamps** (start and end time in seconds for each segment)
+- **Transcribed text** per segment
+
+The system is **zero-shot**: no speaker-specific training is needed at inference time. Speakers are identified by comparing voice embeddings against known prototypes using cosine similarity and a calibrated threshold.
 
 ---
 
 ## Project Structure
 
 ```
-hearedit/
+INFO9023-MLSD-Project/
 │
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                  # CI/CD pipeline (pre-commit + pytest)
+│       └── ci.yml                   # CI pipeline: pre-commit + pytest
 │
 ├── src/
-│   └── milestone_1/
-│       ├── __init__.py
-│       ├── utils.py                        # Pure, testable functions (normalize, IQR filter, EER…)
-│       ├── gcs_download.py                 # GCS → local data sync utility
-│       ├── speaker_embedding_threshold.py  # Main training/threshold script
-│       ├── vosk_speaker_recognition.ipynb  # EDA & prototyping notebook
-|       └── data/                           # gitignored — local LibriSpeech copy
-│          └── LibriSpeech/
-│              ├── SPEAKERS.TXT
-│              ├── CHAPTERS.TXT
-│              └── dev-clean/
+│   ├── app.py                       # Flask REST API entry point
+│   ├── hearEdit.py                  # HearEdit orchestrator (main pipeline class)
+│   ├── transcriber.py               # ASR (Vosk) + speaker embedding (ECAPA)
+│   ├── diarizer.py                  # Speaker identification via cosine similarity
+│   ├── speaker.py                   # Speaker prototype management
+│   ├── extractor.py                 # Extract (segment) data model
+│   ├── speaker_embedding_threshold.py  # Threshold calibration script (Milestone 1)
+│   ├── train_speaker_pair_nn.py     # ECAPA fine-tuning script (Milestone 2)
+│   ├── gcs_download.py              # GCS → local file sync utility
+│   ├── utils.py                     # Pure utility functions (normalize, IQR, EER…)
+│   ├── threshold_dev-clean.json     # Calibrated cosine similarity threshold
+│   ├── speakers_embeddings_dev-clean.npz  # Cached speaker embeddings
+│   ├── gcs_upload.ipynb             # One-time GCS upload notebook
+│   ├── vosk_speaker_recognition_bs.ipynb  # EDA & prototyping notebook
+│   ├── templates/
+│   │   └── index.html               # Web UI served at GET /
+│   └── Ntrain/
+│       ├── models/                  # SpeechBrain model files (used during fine-tuning)
+│       └── train_speaker_pair_nn.py # Legacy training entry point
 │
-├── docs/
-│   ├── EXPERIMENTATION.md          # EDA results, similarity analysis, threshold selection
-│   └── DATA.md                     # Cloud storage design decisions
+├── notebooks/
+│   └── model_training/
+│       └── vosk_speaker_recognition/  # Exploration notebooks
 │
 ├── tests/
-│   └── test_speaker_embedding.py   # Unit tests (normalize, IQR, EER, similarities)
+│   └── test_utils.py                # Unit tests for pure ML logic
+│
+├── docs/
+│   ├── API.md                       # REST API full documentation
+│   ├── DATA.md                      # Cloud storage design decisions
+│   ├── DEPLOYMENT.md                # Docker & Cloud Run deployment guide
+│   ├── EXPERIMENTATION.md           # Threshold & fine-tuning results
+│   ├── SPEAKER_ENCODER.md           # Explain the train on speaker encoder
+│   └── pictures/                    # Plots referenced by docs
 │
 ├── slides/
-│   └── milestone_1.pdf             # Milestone 1 presentation slides
+│   └── milestone_1.pdf
+│   └── milestone_2.pdf
 │
-├── data/                           # gitignored — local LibriSpeech copy
-│   └── LibriSpeech/
-│       ├── SPEAKERS.TXT
-│       ├── CHAPTERS.TXT
-│       └── dev-clean/
-│
-├── models/
-│   ├── vosk-model-en-us-0.22/
-│   └── vosk-model-spk-0.4/
-│
-├── .pre-commit-config.yaml         # Pre-commit hooks (ruff formatting)
+├── Dockerfile                       # Container definition for the API
+├── requirements.txt                 # Dev/training dependencies
+├── requirements-api.txt             # API/Docker runtime dependencies
+├── ruff.toml                        # Linter configuration
+├── .pre-commit-config.yaml          # Pre-commit hooks
 ├── .gitignore
-├── pyproject.toml                  # Dependencies managed with uv
-└── README.md
 ```
+
+---
+
+## System Overview
+
+```
+Audio file (WAV / MP3 / FLAC / …)
+        │
+        ▼
+   Transcriber
+   ├── FFmpeg      → decode to 16 kHz mono PCM
+   ├── Vosk        → speech-to-text (ASR), produces word-level timestamps
+   └── ECAPA       → 192-dim voice embedding per segment
+        │
+        ▼
+    Diarizer
+   └── cosine similarity vs. known speaker prototypes
+       ├── similarity > threshold  →  assign to existing speaker
+       └── similarity ≤ threshold  →  create new speaker
+        │
+        ▼
+   HearEdit (orchestrator)
+   └── chronology of Extract objects
+       {start, end, speaker, text, embedding}
+        │
+        ▼
+   Flask API  →  JSON response  →  Client
+```
+
+**Two ML models are involved:**
+
+| Model | Role | Training |
+|-------|------|----------|
+| Vosk `vosk-model-en-us-0.22` | ASR — speech-to-text | Pre-trained, not fine-tuned |
+| SpeechBrain ECAPA-TDNN | Speaker embeddings | Pre-trained on VoxCeleb, fine-tuned on LibriSpeech `train-clean-100` |
+
+The diarization threshold (`0.437`) is calibrated on LibriSpeech `dev-clean` using the **Equal Error Rate (EER)** criterion — see [`docs/EXPERIMENTATION.md`](docs/EXPERIMENTATION.md).
 
 ---
 
 ## Getting Started
 
+### Prerequisites
 
-### Download Vosk models
+- Python 3.11
+- FFmpeg (Linux: `apt install ffmpeg` / Windows: `imageio-ffmpeg` via pip)
+- The Vosk model and fine-tuned ECAPA weights (see below)
 
-Download and extract the following models into `./models/`:
-
-| Model | Link |
-|---|---|
-| `vosk-model-en-us-0.22` | https://alphacephei.com/vosk/models |
-| `vosk-model-spk-0.4` | https://alphacephei.com/vosk/models |
-
-```
-models/
-├── vosk-model-en-us-0.22/
-└── vosk-model-spk-0.4/
-```
-
-### Run the threshold computation script
-
-**Option A — Local data** (LibriSpeech already downloaded):
+### Install dependencies
 
 ```bash
-python src/speaker_embedding_threshold.py \
-    --local \
-    --ds_dir    ./data/LibriSpeech/ \
-    --vosk_model ./models/vosk-model-en-us-0.22 \
-    --spk_model  ./models/vosk-model-spk-0.4
+pip install -r requirements.txt        # development / training
+pip install -r requirements-api.txt    # API runtime (also used in Docker)
 ```
 
-**Option B — Auto-download from GCS** (requires GCP credentials):
+### Download models
+
+| Model | Source | Local path |
+|-------|--------|------------|
+| `vosk-model-en-us-0.22` | [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) | `models/vosk-model-en-us-0.22/` |
+| ECAPA fine-tuned weights | GCS: `gs://hearedit-models/artifacts/` | `artifacts/ecapa_finetuned_speakerid_hidden512.pt` |
+
+### Run the API locally
 
 ```bash
-gcloud auth application-default login
-
-python src/speaker_embedding_threshold.py \
-    --ds_dir    ./data/LibriSpeech/ \
-    --vosk_model ./models/vosk-model-en-us-0.22 \
-    --spk_model  ./models/vosk-model-spk-0.4
+cd src
+python app.py
+# → http://localhost:5000
 ```
 
-The script produces:
-- `speakers_embeddings_dev-clean.npz` — cached embeddings (reused on subsequent runs)
-- `threshold_dev-clean.json` — optimal cosine similarity threshold + metrics
+Or with Docker (models mounted as volumes):
+
+```bash
+docker build -t hearedit-api .
+docker run -p 5000:8080 \
+  -v $(pwd)/models:/models \
+  -v $(pwd)/artifacts:/artifacts \
+  hearedit-api
+```
 
 ### Run the tests
 
@@ -132,32 +180,98 @@ PYTHONPATH=src pytest tests/ -v
 
 ## Data
 
-The dataset used is **LibriSpeech `dev-clean`** — 40 speakers, read English audiobooks in `.flac` format.
+The primary dataset is **LibriSpeech** — read English audiobooks:
+
+| Split | Purpose | Speakers | Hours |
+|-------|---------|----------|-------|
+| `dev-clean` | Threshold calibration | 40 | ~5 h |
+| `train-clean-100` | ECAPA fine-tuning | 251 | ~100 h |
 
 Data is stored on **Google Cloud Storage**:
 
 ```
-gs://mlops-2026-dataset-bucket/dev-clean/LibriSpeech/
+gs://mlops-2026-dataset-bucket/dev-clean/LibriSpeech/      # threshold calibration
 ```
 
-The choice of GCS over BigQuery or Firestore is documented in [`docs/DATA.md`](docs/DATA.md).
+Models and fine-tuned weights are stored separately:
 
-> `data/` and `models/` are listed in `.gitignore` and are never committed to the repository.
+```
+gs://hearedit-models/
+├── models/vosk-model-en-us-0.22/
+└── artifacts/ecapa_finetuned_speakerid_hidden512.pt
+```
+
+Full storage design rationale → [`docs/DATA.md`](docs/DATA.md)
+
+> `data/`, `models/`, and `artifacts/` are in `.gitignore` and never committed.
 
 ---
 
-## ML Model
+## ML Models
 
-The speaker verification model is based on **cosine similarity** of voice embeddings extracted by the Vosk speaker model (`vosk-model-spk-0.4`).
+### Milestone 1 — Threshold Calibration
 
-The core steps are:
+The original speaker model used Vosk's built-in speaker embeddings (`vosk-model-spk-0.4`). A cosine similarity threshold was calibrated on LibriSpeech `dev-clean` using the **EER criterion**:
 
-1. Extract embeddings for all speakers in LibriSpeech `dev-clean`
-2. Filter outlier speakers using IQR
-3. Compute pairwise intra-speaker and inter-speaker cosine similarities
-4. Fit a ROC curve and select the threshold at the **Equal Error Rate (EER)**
+| Metric | Value |
+|--------|-------|
+| AUC | 0.9683 |
+| EER | 9.50% |
+| Threshold | 0.437 |
 
-Full methodology and results are in [`docs/EXPERIMENTATION.md`](docs/EXPERIMENTATION.md).
+### Milestone 2 — ECAPA Fine-tuning
+
+The speaker embedding model was upgraded to **SpeechBrain's ECAPA-TDNN**, fine-tuned on LibriSpeech `train-clean-100` as a speaker classification task:
+
+- **Architecture**: ECAPA-TDNN encoder + linear classifier head (hidden dim 512)
+- **Training**: 10 epochs, encoder LR 3×10⁻⁶, classifier LR 5×10⁻⁴, batch size 16
+- **Output**: 192-dim speaker embeddings replacing the original Vosk embeddings
+- **Threshold**: recalibrated on `dev-clean` using the same EER methodology
+
+Full methodology, training curves, and results → [`docs/EXPERIMENTATION.md`](docs/EXPERIMENTATION.md)
+
+---
+
+## REST API
+
+The pipeline is served as a REST API on **Google Cloud Run**:
+
+```
+https://hearedit-api-726024632692.europe-west1.run.app
+```
+
+### Quick example
+
+```bash
+curl -X POST https://hearedit-api-726024632692.europe-west1.run.app/transcribe \
+  -F "audio=@my_recording.wav"
+```
+
+**Response:**
+```json
+{
+  "filename": "my_recording.wav",
+  "full_text": "it is only a posteriori through our experience ...",
+  "segments": [
+    { "start": 0.0, "end": 20.07, "speaker": "speaker 1", "text": "it is only..." },
+    { "start": 20.07, "end": 37.5, "speaker": "speaker 2", "text": "well I think..." }
+  ]
+}
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Web UI (drag-and-drop upload) |
+| `GET` | `/health` | Health check — returns `{"status": "ok"}` |
+| `POST` | `/transcribe` | Transcribe an audio file |
+| `GET` | `/past_transcriptions` | List all past transcriptions (in-memory) |
+| `GET` | `/past_transcriptions/<id>` | Get a specific past transcription |
+
+Full API reference → [`docs/API.md`](docs/API.md)
+
+Deployment guide → [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 
 ---
 
@@ -166,19 +280,19 @@ Full methodology and results are in [`docs/EXPERIMENTATION.md`](docs/EXPERIMENTA
 The pipeline is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every pull request targeting `main` or `develop`.
 
 | Step | Tool | What it checks |
-|---|---|---|
-| Pre-commit hooks | `pre-commit` | Code formatting (ruff), trailing whitespace, etc. |
-| Unit tests | `pytest` | Pure ML logic — normalize, IQR filter, EER threshold, similarities |
+|------|------|----------------|
+| Pre-commit | `pre-commit` + `ruff` | Code formatting, trailing whitespace, import sorting |
+| Unit tests | `pytest` | Pure ML logic — normalize, IQR filter, EER, cosine similarity |
 
-The tests are intentionally **lightweight**: they do not require Vosk models or audio files, so they run in seconds on any CI machine.
+Tests are intentionally lightweight: they require no models or audio files and run in seconds on any CI machine.
 
 ---
 
 ## Documentation
 
 | File | Content |
-|---|---|
-| [`docs/EXPERIMENTATION.md`](docs/EXPERIMENTATION.md) | EDA, similarity distributions, threshold selection methodology and results |
-| [`docs/DATA.md`](docs/DATA.md) | Cloud storage choice (GCS vs BigQuery vs Firestore), bucket config, upload & download process |
-
----
+|------|---------|
+| [`docs/EXPERIMENTATION.md`](docs/EXPERIMENTATION.md) | Threshold calibration methodology, similarity distributions, ROC curve, ECAPA fine-tuning results |
+| [`docs/DATA.md`](docs/DATA.md) | Cloud storage design (GCS vs BigQuery vs Firestore), bucket layout, upload/download process |
+| [`docs/API.md`](docs/API.md) | Full REST API reference — endpoints, request/response format, implementation details |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Docker packaging, Cloud Run deployment, environment variables, memory considerations |

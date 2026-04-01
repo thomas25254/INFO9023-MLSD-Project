@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HearEdit — Audio Transcription</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f4f5f7;
+            color: #1a1a2e;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 16px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        header p {
+            margin-top: 8px;
+            color: #555;
+            font-size: 1rem;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            padding: 32px;
+            width: 100%;
+            max-width: 680px;
+        }
+
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 40px 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #4f46e5;
+            background: #f5f3ff;
+        }
+
+        .upload-area input[type="file"] {
+            display: none;
+        }
+
+        .upload-area .icon {
+            font-size: 2.5rem;
+            margin-bottom: 12px;
+        }
+
+        .upload-area .label {
+            font-size: 1rem;
+            color: #555;
+        }
+
+        .upload-area .label span {
+            color: #4f46e5;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .upload-area .file-name {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            margin-top: 20px;
+            padding: 12px;
+            background: #4f46e5;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn:hover { background: #4338ca; }
+        .btn:disabled { background: #a5b4fc; cursor: not-allowed; }
+
+        .spinner {
+            display: none;
+            text-align: center;
+            margin-top: 24px;
+            color: #555;
+        }
+
+        .spinner.visible { display: block; }
+
+        .spinner::after {
+            content: '';
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid #ccc;
+            border-top-color: #4f46e5;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .result-section {
+            margin-top: 40px;
+            width: 100%;
+            max-width: 680px;
+        }
+
+        .result-section h2 {
+            font-size: 1.2rem;
+            margin-bottom: 16px;
+            font-weight: 600;
+        }
+
+        .full-text-box {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            padding: 24px;
+            margin-bottom: 20px;
+            line-height: 1.7;
+            font-size: 1rem;
+        }
+
+        .segments-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            overflow: hidden;
+            font-size: 0.9rem;
+        }
+
+        .segments-table th {
+            background: #4f46e5;
+            color: #fff;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .segments-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            vertical-align: top;
+        }
+
+        .segments-table tr:last-child td { border-bottom: none; }
+        .segments-table tr:hover td { background: #f9f9ff; }
+
+        .timestamp {
+            color: #888;
+            white-space: nowrap;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+
+        .error-box {
+            background: #fef2f2;
+            border: 1px solid #fca5a5;
+            border-radius: 8px;
+            padding: 16px;
+            color: #b91c1c;
+            margin-top: 20px;
+        }
+
+        .btn-download {
+            padding: 8px 16px;
+            background: #059669;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-download:hover { background: #047857; }
+
+        footer {
+            margin-top: 48px;
+            color: #aaa;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>HearEdit</h1>
+    <p>Upload a WAV file and get its transcription with timestamps.</p>
+</header>
+
+<div class="card">
+    <form id="uploadForm" enctype="multipart/form-data">
+        <div class="upload-area" id="dropZone">
+            <div class="icon">🎙️</div>
+            <input type="file" name="audio" id="audioInput" accept=".wav,.mp3,.mp4,.ogg,.flac">
+            <div class="label">
+                Drag & drop your audio file here, or
+                <span onclick="document.getElementById('audioInput').click()">browse</span>
+            </div>
+            <div class="file-name" id="fileName"></div>
+        </div>
+        <button class="btn" id="submitBtn" type="submit" disabled>Transcribe</button>
+    </form>
+    <div class="spinner" id="spinner">Transcribing, please wait...</div>
+    <div class="error-box" id="errorBox" style="display:none;"></div>
+</div>
+
+<div class="result-section" id="results" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h2 style="margin:0;">Full text</h2>
+        <button class="btn-download" id="downloadBtn">⬇ Download .txt</button>
+    </div>
+    <div class="full-text-box" id="fullText"></div>
+
+    <h2 style="margin-top:24px;">Segments</h2>
+    <table class="segments-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Speaker</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Text</th>
+            </tr>
+        </thead>
+        <tbody id="segmentsBody"></tbody>
+    </table>
+</div>
+
+<footer>HearEdit Transcription API</footer>
+
+<script>
+    const dropZone = document.getElementById('dropZone');
+    const audioInput = document.getElementById('audioInput');
+    const fileNameEl = document.getElementById('fileName');
+    const submitBtn = document.getElementById('submitBtn');
+    const spinner = document.getElementById('spinner');
+    const errorBox = document.getElementById('errorBox');
+    const results = document.getElementById('results');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    let lastResult = null;
+
+    downloadBtn.addEventListener('click', () => {
+        if (!lastResult) return;
+
+        const sep = '='.repeat(60);
+        const thin = '-'.repeat(60);
+        let lines = [];
+
+        lines.push('HEAREDIT — TRANSCRIPTION REPORT');
+        lines.push(sep);
+        lines.push(`File     : ${lastResult.filename}`);
+        lines.push(`Segments : ${lastResult.segments.length}`);
+        lines.push('');
+        lines.push('FULL TEXT');
+        lines.push(thin);
+        lines.push(lastResult.full_text || '(empty)');
+        lines.push('');
+        lines.push('SEGMENTS');
+        lines.push(thin);
+
+        lastResult.segments.forEach((seg, i) => {
+            const start = formatTime(seg.start);
+            const end   = formatTime(seg.end);
+            lines.push(`[${String(i + 1).padStart(3, '0')}] ${seg.speaker || '?'}  ${start} → ${end}`);
+            lines.push(`      ${seg.text}`);
+            lines.push('');
+        });
+
+        lines.push(sep);
+
+        const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        const base = lastResult.filename.replace(/\.[^/.]+$/, '');
+        a.href     = url;
+        a.download = `${base}_transcription.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+
+    function setFile(file) {
+        fileNameEl.textContent = file ? `Selected: ${file.name}` : '';
+        submitBtn.disabled = !file;
+    }
+
+    audioInput.addEventListener('change', () => setFile(audioInput.files[0]));
+
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file) {
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            audioInput.files = dt.files;
+            setFile(file);
+        }
+    });
+
+    function formatTime(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = (seconds % 60).toFixed(2).padStart(5, '0');
+        return `${m}:${s}`;
+    }
+
+    document.getElementById('uploadForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const file = audioInput.files[0];
+        if (!file) return;
+
+        submitBtn.disabled = true;
+        spinner.classList.add('visible');
+        errorBox.style.display = 'none';
+        results.style.display = 'none';
+
+        const formData = new FormData();
+        formData.append('audio', file);
+
+        try {
+            const resp = await fetch('/transcribe', { method: 'POST', body: formData });
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                errorBox.textContent = data.error || 'Unknown error.';
+                errorBox.style.display = 'block';
+                return;
+            }
+
+            lastResult = data;
+            document.getElementById('fullText').textContent = data.full_text || '(no text)';
+
+            const tbody = document.getElementById('segmentsBody');
+            tbody.innerHTML = '';
+            (data.segments || []).forEach((seg, i) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${i + 1}</td>
+                    <td><strong>${seg.speaker || '?'}</strong></td>
+                    <td class="timestamp">${formatTime(seg.start)}</td>
+                    <td class="timestamp">${formatTime(seg.end)}</td>
+                    <td>${seg.text}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            results.style.display = 'block';
+        } catch (err) {
+            errorBox.textContent = 'Request failed: ' + err.message;
+            errorBox.style.display = 'block';
+        } finally {
+            spinner.classList.remove('visible');
+            submitBtn.disabled = false;
+        }
+    });
+</script>
+
+</body>
+</html>
