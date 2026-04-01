@@ -41,10 +41,10 @@ modules:
     embedding_model: !ref <embedding_model>
     mean_var_norm_emb: !ref <mean_var_norm_emb>
     classifier: !ref <classifier>
-        
+
 label_encoder: !new:speechbrain.dataio.encoder.CategoricalEncoder
 
-        
+
 pretrainer: !new:speechbrain.utils.parameter_transfer.Pretrainer
     loadables:
         embedding_model: !ref <embedding_model>

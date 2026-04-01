@@ -2,7 +2,7 @@
 
 ## What is this component used for?
 
-In HearEdit, this component is used to convert an audio segment into a **speaker embedding**.  
+In HearEdit, this component is used to convert an audio segment into a **speaker embedding**.
 This embedding is then used by the diarizer to compare voices against one another.
 
 It is important to distinguish between three key components in the project:
@@ -11,7 +11,7 @@ It is important to distinguish between three key components in the project:
 - **fine-tuned speaker encoder**: a model used to produce an embedding per segment.
 - **diarizer**: a decision rule based on cosine similarity and an offline-calibrated threshold.
 
-We have therefore **not** retrained Vosk.  
+We have therefore **not** retrained Vosk.
 The part that is actually trained in this component is the **speaker encoder**.
 
 ---
@@ -108,7 +108,7 @@ class SpeakerClassifierHead(nn.Module):
         return self.net(emb)
 ```
 
-This head is only used during training.  
+This head is only used during training.
 It allows a supervised signal to be sent to the encoder.
 
 ---
@@ -262,7 +262,7 @@ The trained component of HearEdit is the **fine-tuned speaker encoder**.
 
 We start with a pre-trained SpeechBrain model, which we fine-tune on a **speaker identification** task using `LibriSpeech train-clean-100`.
 
-During training, we add a classification head.  
+During training, we add a classification head.
 At inference, we retain **only the encoder**, which is used to produce the embeddings subsequently used by the diarizer.
 
 The **`hidden512`** variant is the one we have selected as the best compromise for the project.
