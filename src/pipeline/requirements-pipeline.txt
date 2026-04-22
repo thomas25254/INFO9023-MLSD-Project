@@ -1,0 +1,12 @@
+kfp
+google-cloud-aiplatform
+google-cloud-storage
+speechbrain
+torch
+torchaudio
+soundfile
+vosk
+scikit-learn
+numpy
+pandas
+tqdm
