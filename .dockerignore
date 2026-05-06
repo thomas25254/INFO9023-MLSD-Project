@@ -1,0 +1,16 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+.git
+data/
+models/
+artifacts/
+notebooks/
+slides/
+docs/
+tests/
+src/data/
+src/__pycache__/
+src/cloud_data/
+src/*.ipynb

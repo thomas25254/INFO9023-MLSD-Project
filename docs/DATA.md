@@ -119,9 +119,49 @@ No credentials are ever committed to the repository. The `.gitignore` excludes a
 
 | Item | Reason |
 |---|---|
-| Vosk ASR model (`vosk-model-en-us-0.22`) | Downloaded directly from https://alphacephei.com/vosk/models |
-| Vosk speaker model (`vosk-model-spk-0.4`) | Downloaded directly from https://alphacephei.com/vosk/models |
+| Vosk ASR model (`vosk-model-en-us-0.22`) | Too large (~2.7 GB) for the dataset bucket; stored in the dedicated `hearedit-models` bucket instead (see below) |
 | Embedding cache (`.npz`) | Local artefact, regenerated from data |
-| Threshold JSON | Local artefact, output of the training script |
+| Threshold JSON (`threshold_dev-clean.json`) | Committed directly to the repository in `src/`; small file (< 1 KB) |
 
-Model weights are not versioned in GCS at this stage. This will be revisited when model versioning becomes a requirement (Sprint 3+).
+---
+
+## Model Storage Bucket
+
+A second GCS bucket is used exclusively for model artefacts needed at inference time:
+
+| Parameter | Value |
+|---|---|
+| **Bucket name** | `hearedit-models` |
+| **Location** | `europe-west1` (same region as the Cloud Run service) |
+| **Storage class** | Standard |
+
+### Structure
+
+```
+gs://hearedit-models/
+├── models/
+│   └── vosk-model-en-us-0.22/     # Vosk ASR model (~2.7 GB)
+│       ├── am/
+│       ├── graph/
+│       └── ...
+└── artifacts/
+    └── ecapa_finetuned_speakerid_hidden512.pt   # Fine-tuned ECAPA-TDNN weights (~80 MB)
+```
+
+### Why a separate bucket?
+
+- Keeps model artefacts isolated from training data — different access patterns and update frequencies.
+- The Cloud Run service account only needs read access to `hearedit-models`, not to the full dataset bucket.
+- Allows future model versioning without affecting the data pipeline.
+
+### Upload commands
+
+```bash
+# Upload Vosk model
+gsutil -m cp -r models/vosk-model-en-us-0.22 gs://hearedit-models/models/
+
+# Upload fine-tuned ECAPA weights
+gsutil cp artifacts/ecapa_finetuned_speakerid_hidden512.pt gs://hearedit-models/artifacts/
+```
+
+Models are downloaded automatically by the API container at startup via `src/gcs_download.py` when the `GCS_BUCKET` environment variable is set. See [`docs/DEPLOYMENT.md`](DEPLOYMENT.md) for details.

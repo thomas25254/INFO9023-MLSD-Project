@@ -16,6 +16,7 @@ repos:
       - id: check-added-large-files
       - id: check-toml
       - id: check-yaml
+        exclude: ^src/Ntrain/models/hyperparams\.yaml$
       - id: end-of-file-fixer
       - id: mixed-line-ending
         args: [--fix=lf]
