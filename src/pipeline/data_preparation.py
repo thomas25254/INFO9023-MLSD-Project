@@ -1,5 +1,6 @@
-from kfp.dsl import component, Output, Dataset
 from config import BASE_IMAGE
+from kfp.dsl import Dataset, Output, component
+
 
 @component(base_image=BASE_IMAGE)
 def data_preparation(
@@ -8,8 +9,12 @@ def data_preparation(
     val_split: Output[Dataset],
     test_split: Output[Dataset],
 ):
-    import os, json, glob, random
+    import glob
+    import json
+    import os
+    import random
     from collections import defaultdict
+
     from google.cloud import storage
 
     LOCAL_DATA = "/tmp/librispeech"
@@ -22,7 +27,7 @@ def data_preparation(
         bucket = client.bucket(bucket_name)
         blobs = bucket.list_blobs(prefix=prefix)
         for blob in blobs:
-            rel_path = blob.name[len(prefix):]
+            rel_path = blob.name[len(prefix) :]
             local_path = os.path.join(local_dir, rel_path)
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             if not blob.name.endswith("/"):
@@ -53,15 +58,15 @@ def data_preparation(
         by_spk[item["speaker"]].append(item)
 
     train_items, val_items, test_items = [], [], []
-    for spk, utts in by_spk.items():
+    for _spk, utts in by_spk.items():
         if len(utts) < 3:
             continue
         random.shuffle(utts)
         n_train = max(1, int(len(utts) * 0.8))
-        n_val   = max(1, int(len(utts) * 0.1))
+        n_val = max(1, int(len(utts) * 0.1))
         train_items.extend(utts[:n_train])
-        val_items.extend(utts[n_train:n_train + n_val])
-        test_items.extend(utts[n_train + n_val:])
+        val_items.extend(utts[n_train : n_train + n_val])
+        test_items.extend(utts[n_train + n_val :])
 
     print(f"Train: {len(train_items)} utterances")
     print(f"Val:   {len(val_items)} utterances")

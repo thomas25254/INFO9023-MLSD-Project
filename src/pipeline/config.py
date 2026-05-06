@@ -3,4 +3,6 @@ BUCKET_NAME = "gs://hearedit-models"
 DATASET_BUCKET = "gs://mlops-2026-dataset-bucket"
 LOCATION = "europe-west1"
 PIPELINE_ROOT = f"{BUCKET_NAME}/pipeline_root/"
-BASE_IMAGE = f"{LOCATION}-docker.pkg.dev/{PROJECT_ID}/hearedit-pipeline/pipeline-base:latest"
+BASE_IMAGE = (
+    f"{LOCATION}-docker.pkg.dev/{PROJECT_ID}/hearedit-pipeline/pipeline-base:latest"
+)
