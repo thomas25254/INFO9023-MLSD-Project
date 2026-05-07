@@ -1,0 +1,16 @@
+[project]
+name = "hearedit-dashboard"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "db-dtypes>=1.4.4",
+    "google-cloud-bigquery>=3.41.0",
+    "google-cloud-bigquery-storage>=2.38.0",
+    "matplotlib>=3.10.9",
+    "numpy>=2.4.4",
+    "pandas>=3.0.2",
+    "plotly>=6.7.0",
+    "pyarrow>=24.0.0",
+    "requests>=2.33.1",
+    "streamlit>=1.57.0",
+]
