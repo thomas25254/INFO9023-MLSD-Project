@@ -114,9 +114,6 @@ def _download_models_from_gcs():
 
 
 _download_models_from_gcs()
-print(f"[DEBUG] SPK_MODEL_PATH={SPK_MODEL_PATH}")
-print(f"[DEBUG] MODEL_PATH={MODEL_PATH}")
-print(f"[DEBUG] File exists: {os.path.isfile(SPK_MODEL_PATH)}")
 
 _past_transcriptions = []
 
