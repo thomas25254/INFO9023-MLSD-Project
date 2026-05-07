@@ -6,6 +6,8 @@ import tempfile
 # but make it explicit so imports work regardless of cwd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from datetime import UTC, datetime
+
 from flask import Flask, jsonify, render_template, request
 
 from hearEdit import HearEdit
@@ -57,6 +59,32 @@ SPK_MODEL_PATH = _short(
     )
 )
 
+BQ_TABLE = os.environ.get(
+    "BQ_TABLE", "info9023-project-hearedit.hearedit_dataset.transcriptions"
+)
+
+
+def save_to_bigquery(filename, segments, full_text):
+    try:
+        from google.cloud import bigquery
+
+        client = bigquery.Client()
+        rows = [
+            {
+                "filename": filename,
+                "full_text": full_text,
+                "num_segments": len(segments),
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        ]
+        errors = client.insert_rows_json(BQ_TABLE, rows)
+        if errors:
+            print(f"[BQ] Insert errors: {errors}")
+        else:
+            print(f"[BQ] Saved transcription for {filename}")
+    except Exception as e:
+        print(f"[BQ] Failed to save to BigQuery: {e}")
+
 
 def _download_models_from_gcs():
     """Download model files from GCS if not already present locally."""
@@ -86,6 +114,9 @@ def _download_models_from_gcs():
 
 
 _download_models_from_gcs()
+print(f"[DEBUG] SPK_MODEL_PATH={SPK_MODEL_PATH}")
+print(f"[DEBUG] MODEL_PATH={MODEL_PATH}")
+print(f"[DEBUG] File exists: {os.path.isfile(SPK_MODEL_PATH)}")
 
 _past_transcriptions = []
 
@@ -156,6 +187,7 @@ def transcribe():
             "full_text": full_text,
         }
         _past_transcriptions.append(result)
+        save_to_bigquery(audio_file.filename, segments, full_text)
         return jsonify(result)
 
     except Exception as e:
