@@ -16,7 +16,9 @@ A **REST API** wraps the pipeline and is deployed on **Google Cloud Run**, makin
 - [Getting Started](#getting-started)
 - [Data](#data)
 - [ML Models](#ml-models)
+- [Pipeline](#pipeline)
 - [REST API](#rest-api)
+- [Monitoring & Dashboard](#monitoring--dashboard)
 - [CI/CD](#cicd)
 - [Documentation](#documentation)
 
@@ -41,7 +43,8 @@ INFO9023-MLSD-Project/
 │
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                   # CI pipeline: pre-commit + pytest
+│       ├── ci.yml                   # CI pipeline: pre-commit + pytest
+│       └── deploy.yml               # CD pipeline: Docker build & Cloud Run deploy
 │
 ├── src/
 │   ├── app.py                       # Flask REST API entry point
@@ -60,6 +63,22 @@ INFO9023-MLSD-Project/
 │   ├── vosk_speaker_recognition_bs.ipynb  # EDA & prototyping notebook
 │   ├── templates/
 │   │   └── index.html               # Web UI served at GET /
+│   ├── pipeline/                    # Vertex AI KFP training pipeline
+│   │   ├── run_pipeline.py          # Compile & submit the pipeline to Vertex AI
+│   │   ├── config.py                # Pipeline configuration (URIs, hyperparameters)
+│   │   ├── data_preparation.py      # KFP component: download & split LibriSpeech
+│   │   ├── training.py              # KFP component: ECAPA fine-tuning (GPU)
+│   │   ├── evaluation.py            # KFP component: EER / AUC on test set
+│   │   ├── threshold.py             # KFP component: compute production threshold
+│   │   ├── hearedit_pipeline.json   # Compiled KFP pipeline definition
+│   │   ├── requirements-pipeline.txt
+│   │   ├── Dockerfile               # Base image for all KFP components
+│   │   └── test_local.py            # Local smoke-test (no Vertex AI)
+│   ├── streamlit/                   # Monitoring dashboard
+│   │   ├── dashboard.py             # Streamlit app (transcribe + history pages)
+│   │   ├── main.py                  # Entry point
+│   │   ├── Dockerfile               # Container for Cloud Run deployment
+│   │   └── pyproject.toml           # Dashboard dependencies (uv)
 │   └── Ntrain/
 │       ├── models/                  # SpeechBrain model files (used during fine-tuning)
 │       └── train_speaker_pair_nn.py # Legacy training entry point
@@ -76,12 +95,15 @@ INFO9023-MLSD-Project/
 │   ├── DATA.md                      # Cloud storage design decisions
 │   ├── DEPLOYMENT.md                # Docker & Cloud Run deployment guide
 │   ├── EXPERIMENTATION.md           # Threshold & fine-tuning results
+│   ├── PIPELINE.md                  # Vertex AI KFP pipeline documentation
+│   ├── MONITORING.md                # Streamlit dashboard & BigQuery monitoring
 │   ├── SPEAKER_ENCODER.md           # Explain the train on speaker encoder
 │   └── pictures/                    # Plots referenced by docs
 │
 ├── slides/
-│   └── milestone_1.pdf
+│   ├── milestone_1.pdf
 │   └── milestone_2.pdf
+│   └── milestone_3.pdf
 │
 ├── Dockerfile                       # Container definition for the API
 ├── requirements.txt                 # Dev/training dependencies
@@ -232,6 +254,43 @@ Full methodology, training curves, and results → [`docs/EXPERIMENTATION.md`](d
 
 ---
 
+## Pipeline
+
+The retraining lifecycle is automated with a **Vertex AI Kubeflow Pipelines (KFP)** pipeline defined in [`src/pipeline/`](src/pipeline/). It orchestrates four components that run entirely in the cloud without manual intervention:
+
+```
+data_preparation (CPU)
+        │
+        ├── train_split ──┐
+        ├── val_split   ──┤──► training (GPU T4)
+        └── test_split  ──┤         │
+                          │         ├── model ──► evaluation (CPU)
+                          │         └── model ──► compute_threshold (CPU)
+                          └─────────┘
+```
+
+| Component | Machine | What it does |
+|-----------|---------|--------------|
+| `data_preparation` | CPU | Downloads LibriSpeech from GCS, splits by speaker (80/10/10) |
+| `training` | n1-standard-4 + T4 GPU | Fine-tunes ECAPA-TDNN with ArcFace loss, saves best checkpoint |
+| `evaluation` | CPU | Computes EER & AUC on the held-out test set |
+| `compute_threshold` | CPU | Derives the production cosine-similarity threshold (EER criterion) |
+
+The output `threshold_pipeline.json` is written directly to GCS and loaded by the Flask API at startup — no redeployment needed.
+
+### Run the pipeline
+
+```bash
+cd src/pipeline
+python run_pipeline.py   # compiles + submits to Vertex AI
+```
+
+Monitor execution in **GCP Console → Vertex AI → Pipelines → Runs** (region: `europe-west1`).
+
+Full pipeline documentation → [`docs/PIPELINE.md`](docs/PIPELINE.md)
+
+---
+
 ## REST API
 
 The pipeline is served as a REST API on **Google Cloud Run**:
@@ -275,16 +334,65 @@ Deployment guide → [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 
 ---
 
+## Monitoring & Dashboard
+
+A **Streamlit dashboard** is deployed on Cloud Run and provides a public interface to the system:
+
+```
+https://hearedit-dashboard-726024632692.europe-west1.run.app
+```
+
+It has two pages:
+
+| Page | Description |
+|------|-------------|
+| **Transcrire** | Upload an audio file, call the Flask API in real time, visualise segments on an interactive Gantt chart and speaker donut chart |
+| **Historique** | Browse all past transcriptions stored in BigQuery — daily bar chart + expandable transcript list |
+
+Every successful `/transcribe` API call automatically writes one row to **BigQuery** (`hearedit_dataset.transcriptions`), providing a persistent audit log and usage metrics without any client-side instrumentation.
+
+```
+User (browser)
+    │
+    ▼
+Streamlit Dashboard (Cloud Run)          src/streamlit/dashboard.py
+    │
+    ├── POST /transcribe ──► Flask API (Cloud Run)
+    │                            └── HearEdit pipeline (Vosk + ECAPA)
+    │
+    └── SELECT ──────────► BigQuery
+                               └── hearedit_dataset.transcriptions
+```
+
+### Run the dashboard locally
+
+```bash
+cd src/streamlit
+gcloud auth application-default login   # BigQuery access
+uv run streamlit run dashboard.py
+# → http://localhost:8501
+```
+
+Full monitoring & dashboard documentation → [`docs/MONITORING.md`](docs/MONITORING.md)
+
+---
+
 ## CI/CD
 
-The pipeline is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every pull request targeting `main` or `develop`.
+The pipeline is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). CI runs on every pull request targeting `main` or `develop`.
 
-| Step | Tool | What it checks |
+Tests are intentionally lightweight: they require no models or audio files and run in seconds on any CI machine.
+
+| Jobs | Tool | What it checks |
 |------|------|----------------|
 | Pre-commit | `pre-commit` + `ruff` | Code formatting, trailing whitespace, import sorting |
 | Unit tests | `pytest` | Pure ML logic — normalize, IQR filter, EER, cosine similarity |
 
-Tests are intentionally lightweight: they require no models or audio files and run in seconds on any CI machine.
+CD deploys the image in google cloud when pushing to `main`.
+
+| Jobs | Tool | What it checks |
+|------|------|----------------|
+| Deploy | `gcloud` | Authenticate, build and push Docker image. Run deploy |
 
 ---
 
@@ -296,3 +404,6 @@ Tests are intentionally lightweight: they require no models or audio files and r
 | [`docs/DATA.md`](docs/DATA.md) | Cloud storage design (GCS vs BigQuery vs Firestore), bucket layout, upload/download process |
 | [`docs/API.md`](docs/API.md) | Full REST API reference — endpoints, request/response format, implementation details |
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Docker packaging, Cloud Run deployment, environment variables, memory considerations |
+| [`docs/PIPELINE.md`](docs/PIPELINE.md) | Vertex AI KFP pipeline — DAG, component details, Docker image, output artifacts |
+| [`docs/MONITORING.md`](docs/MONITORING.md) | Streamlit dashboard architecture, BigQuery schema, deployment & local dev guide |
+| [`docs/SPEAKER_ENCODER.md`](docs/SPEAKER_ENCODER.md) | ECAPA-TDNN speaker encoder — architecture, training procedure, fine-tuning details |

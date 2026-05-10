@@ -1,0 +1,415 @@
+{
+  "components": {
+    "comp-compute-threshold": {
+      "executorLabel": "exec-compute-threshold",
+      "inputDefinitions": {
+        "artifacts": {
+          "model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        },
+        "parameters": {
+          "gcs_dataset_uri": {
+            "parameterType": "STRING"
+          },
+          "gcs_threshold_output_uri": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "metrics": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-data-preparation": {
+      "executorLabel": "exec-data-preparation",
+      "inputDefinitions": {
+        "parameters": {
+          "gcs_dataset_uri": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "test_split": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "train_split": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "val_split": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-evaluation": {
+      "executorLabel": "exec-evaluation",
+      "inputDefinitions": {
+        "artifacts": {
+          "model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "test_split": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        },
+        "parameters": {
+          "gcs_dataset_uri": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "metrics": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-training": {
+      "executorLabel": "exec-training",
+      "inputDefinitions": {
+        "artifacts": {
+          "train_split": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "val_split": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        },
+        "parameters": {
+          "batch_size": {
+            "defaultValue": 16.0,
+            "isOptional": true,
+            "parameterType": "NUMBER_INTEGER"
+          },
+          "epochs": {
+            "defaultValue": 20.0,
+            "isOptional": true,
+            "parameterType": "NUMBER_INTEGER"
+          },
+          "gcs_dataset_uri": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "metrics": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    }
+  },
+  "defaultPipelineRoot": "gs://hearedit-models/pipeline_root/",
+  "deploymentSpec": {
+    "executors": {
+      "exec-compute-threshold": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "compute_threshold"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef compute_threshold(\n    gcs_dataset_uri: str,\n    gcs_threshold_output_uri: str,\n    model: Input[Model],\n    metrics: Output[Metrics],\n):\n    import json, os\n    import random\n    import numpy as np\n    import torch\n    import torch.nn.functional as F\n    import torchaudio\n    import soundfile as sf\n    from collections import defaultdict\n    from sklearn.metrics import auc, roc_curve\n    from sklearn.metrics.pairwise import cosine_similarity\n    from google.cloud import storage\n\n    if not hasattr(torchaudio, \"list_audio_backends\"):\n        torchaudio.list_audio_backends = lambda: [\"soundfile\"]\n    if not hasattr(torchaudio, \"set_audio_backend\"):\n        torchaudio.set_audio_backend = lambda *a, **k: None\n\n    from speechbrain.inference.speaker import EncoderClassifier\n\n    DEVICE = \"cpu\"\n    LOCAL_DATA = \"/tmp/librispeech\"\n    LOCAL_MODEL_DIR = \"/tmp/ecapa_model\"\n\n    # --- T\u00e9l\u00e9charger les donn\u00e9es ---\n    def download_gcs_prefix(gcs_uri, local_dir):\n        uri = gcs_uri.replace(\"gs://\", \"\")\n        bucket_name, prefix = uri.split(\"/\", 1)\n        client = storage.Client()\n        bucket = client.bucket(bucket_name)\n        blobs = bucket.list_blobs(prefix=prefix)\n        for blob in blobs:\n            rel_path = blob.name[len(prefix):]\n            local_path = os.path.join(local_dir, rel_path)\n            os.makedirs(os.path.dirname(local_path), exist_ok=True)\n            if not blob.name.endswith(\"/\"):\n                blob.download_to_filename(local_path)\n        print(f\"Downloaded {gcs_uri} -> {local_dir}\")\n\n    download_gcs_prefix(gcs_dataset_uri, LOCAL_DATA)\n\n    # --- Charger notre mod\u00e8le ECAPA fine-tun\u00e9 ---\n    encoder = EncoderClassifier.from_hparams(\n        source=\"speechbrain/spkrec-ecapa-voxceleb\",\n        savedir=LOCAL_MODEL_DIR,\n    )\n    encoder.mods.embedding_model.load_state_dict(\n        torch.load(os.path.join(model.path, \"encoder.pt\"), map_location=DEVICE)\n    )\n    encoder.mods = encoder.mods.to(DEVICE)\n    encoder.mods.embedding_model.eval()\n\n    # --- Utilitaires ---\n    def load_audio_mono_16k(path, max_seconds=6.0):\n        signal, sr = sf.read(path, dtype=\"float32\")\n        if len(signal.shape) == 2:\n            signal = signal.mean(axis=1)\n        signal = torch.tensor(signal).unsqueeze(0)\n        if sr != 16000:\n            signal = torchaudio.transforms.Resample(sr, 16000)(signal)\n        max_len = int(max_seconds * 16000)\n        if signal.shape[1] > max_len:\n            signal = signal[:, :max_len]\n        return signal\n\n    def extract_embedding(path):\n        signal = load_audio_mono_16k(path).to(DEVICE)\n        lengths = torch.tensor([1.0], device=DEVICE)\n        with torch.no_grad():\n            feats = encoder.mods.compute_features(signal)\n            feats = encoder.mods.mean_var_norm(feats, lengths)\n            emb = encoder.mods.embedding_model(feats, lengths)\n        return F.normalize(emb.squeeze(), dim=0).cpu().numpy()\n\n    # --- Extraire embeddings par speaker ---\n    by_spk = defaultdict(list)\n    for root, _, files in os.walk(LOCAL_DATA):\n        for f in files:\n            if f.endswith(\".flac\"):\n                parts = os.path.join(root, f).replace(\"\\\\\", \"/\").split(\"/\")\n                speaker_id = parts[-3]\n                by_spk[speaker_id].append(os.path.join(root, f))\n    # Limiter \u00e0 3000 fichiers pour \u00e9viter OOM\n\n    all_files = [(spk, path) for spk, paths in by_spk.items() for path in paths]\n    random.shuffle(all_files)\n    all_files = all_files[:3000]\n    by_spk = defaultdict(list)\n    for spk, path in all_files:\n        by_spk[spk].append(path)\n    print(f\"Limit\u00e9 \u00e0 {len(all_files)} fichiers pour le calcul du threshold\")\n    speakers_embeddings = {}\n    for spk, paths in by_spk.items():\n        embs = [extract_embedding(p) for p in paths]\n        if embs:\n            speakers_embeddings[spk] = np.array(embs)\n\n    print(f\"Threshold computation sur {len(speakers_embeddings)} speakers\")\n\n    # --- Calculer EER ---\n    def normalize(x):\n        return x / np.linalg.norm(x, axis=1, keepdims=True)\n\n    filtered = [normalize(e) for e in speakers_embeddings.values() if len(e) >= 2]\n\n    intra, inter = [], []\n    for i, e in enumerate(filtered):\n        sim = cosine_similarity(e)\n        n = sim.shape[0]\n        intra.extend(sim[np.triu_indices(n, k=1)])\n        for j in range(i+1, len(filtered)):\n            inter.extend(cosine_similarity(e, filtered[j]).ravel())\n\n    scores = np.concatenate([np.array(intra), np.array(inter)])\n    labels = np.concatenate([np.ones(len(intra)), np.zeros(len(inter))])\n\n    fpr, tpr, thresholds = roc_curve(labels, scores, drop_intermediate=False)\n    roc_auc = float(auc(fpr, tpr))\n    eer_idx = np.nanargmin(np.abs(fpr - (1 - tpr)))\n    eer = float((fpr[eer_idx] + (1 - tpr[eer_idx])) / 2)\n    threshold = float(thresholds[eer_idx])\n\n    print(f\"EER={eer:.4f}, AUC={roc_auc:.4f}, Threshold={threshold:.4f}\")\n\n    # --- Sauvegarder ---\n    payload = {\n        \"threshold\": threshold,\n        \"eer\": eer,\n        \"auc\": roc_auc,\n    }\n    local_json = \"/tmp/threshold.json\"\n    with open(local_json, \"w\") as f:\n        json.dump(payload, f, indent=2)\n\n    uri = gcs_threshold_output_uri.replace(\"gs://\", \"\")\n    bucket_name, blob_path = uri.split(\"/\", 1)\n    client = storage.Client()\n    bucket = client.bucket(bucket_name)\n    bucket.blob(blob_path).upload_from_filename(local_json)\n    print(f\"Threshold saved to {gcs_threshold_output_uri}\")\n\n    metrics.log_metric(\"eer\", eer)\n    metrics.log_metric(\"auc\", roc_auc)\n    metrics.log_metric(\"threshold\", threshold)\n\n"
+          ],
+          "image": "europe-west1-docker.pkg.dev/info9023-project-hearedit/hearedit-pipeline/pipeline-base:latest",
+          "resources": {
+            "memoryLimit": 16.0,
+            "resourceMemoryLimit": "16G"
+          }
+        }
+      },
+      "exec-data-preparation": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "data_preparation"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef data_preparation(\n    gcs_dataset_uri: str,\n    train_split: Output[Dataset],\n    val_split: Output[Dataset],\n    test_split: Output[Dataset],\n):\n    import os, json, glob, random\n    from collections import defaultdict\n    from google.cloud import storage\n\n    LOCAL_DATA = \"/tmp/librispeech\"\n\n    # --- Download depuis GCS ---\n    def download_gcs_prefix(gcs_uri, local_dir):\n        uri = gcs_uri.replace(\"gs://\", \"\")\n        bucket_name, prefix = uri.split(\"/\", 1)\n        client = storage.Client()\n        bucket = client.bucket(bucket_name)\n        blobs = bucket.list_blobs(prefix=prefix)\n        for blob in blobs:\n            rel_path = blob.name[len(prefix):]\n            local_path = os.path.join(local_dir, rel_path)\n            os.makedirs(os.path.dirname(local_path), exist_ok=True)\n            if not blob.name.endswith(\"/\"):\n                blob.download_to_filename(local_path)\n        print(f\"Downloaded {gcs_uri} -> {local_dir}\")\n\n    download_gcs_prefix(gcs_dataset_uri, LOCAL_DATA)\n\n    # --- D\u00e9couvrir les fichiers ---\n    def discover_files(root):\n        files = glob.glob(os.path.join(root, \"**\", \"*.flac\"), recursive=True)\n        print(f\"Structure exemple: {files[:3] if files else 'Aucun fichier'}\")\n        items = []\n        for p in sorted(files):\n            parts = p.replace(\"\\\\\", \"/\").split(\"/\")\n            speaker_id = parts[-3]\n            items.append({\"wav\": p, \"speaker\": speaker_id})\n        return items\n\n    all_items = discover_files(LOCAL_DATA)\n    if not all_items:\n        raise RuntimeError(f\"Aucun .flac trouv\u00e9 dans {LOCAL_DATA}\")\n    print(f\"Fichiers trouv\u00e9s: {len(all_items)}\")\n\n    # --- Split 80/10/10 par speaker ---\n    by_spk = defaultdict(list)\n    for item in all_items:\n        by_spk[item[\"speaker\"]].append(item)\n\n    train_items, val_items, test_items = [], [], []\n    for spk, utts in by_spk.items():\n        if len(utts) < 3:\n            continue\n        random.shuffle(utts)\n        n_train = max(1, int(len(utts) * 0.8))\n        n_val   = max(1, int(len(utts) * 0.1))\n        train_items.extend(utts[:n_train])\n        val_items.extend(utts[n_train:n_train + n_val])\n        test_items.extend(utts[n_train + n_val:])\n\n    print(f\"Train: {len(train_items)} utterances\")\n    print(f\"Val:   {len(val_items)} utterances\")\n    print(f\"Test:  {len(test_items)} utterances\")\n\n    # --- Sauvegarder les splits ---\n    os.makedirs(train_split.path, exist_ok=True)\n    os.makedirs(val_split.path, exist_ok=True)\n    os.makedirs(test_split.path, exist_ok=True)\n\n    with open(os.path.join(train_split.path, \"train.json\"), \"w\") as f:\n        json.dump(train_items, f)\n    with open(os.path.join(val_split.path, \"val.json\"), \"w\") as f:\n        json.dump(val_items, f)\n    with open(os.path.join(test_split.path, \"test.json\"), \"w\") as f:\n        json.dump(test_items, f)\n\n    print(\"Splits sauvegard\u00e9s.\")\n\n"
+          ],
+          "image": "europe-west1-docker.pkg.dev/info9023-project-hearedit/hearedit-pipeline/pipeline-base:latest"
+        }
+      },
+      "exec-evaluation": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "evaluation"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef evaluation(\n    test_split: Input[Dataset],\n    model: Input[Model],\n    metrics: Output[Metrics],\n    gcs_dataset_uri: str,\n):\n    import os, json\n    import torch\n    import torch.nn.functional as F\n    import torchaudio\n    import soundfile as sf\n    import numpy as np\n    from collections import defaultdict\n    from sklearn.metrics import auc, roc_curve\n    from sklearn.metrics.pairwise import cosine_similarity\n\n    if not hasattr(torchaudio, \"list_audio_backends\"):\n        torchaudio.list_audio_backends = lambda: [\"soundfile\"]\n    if not hasattr(torchaudio, \"set_audio_backend\"):\n        torchaudio.set_audio_backend = lambda *a, **k: None\n\n    from speechbrain.inference.speaker import EncoderClassifier\n    from google.cloud import storage\n\n    DEVICE = \"cpu\"\n    LOCAL_MODEL_DIR = \"/tmp/ecapa_model\"\n\n    def download_gcs_prefix(gcs_uri, local_dir):\n        uri = gcs_uri.replace(\"gs://\", \"\")\n        bucket_name, prefix = uri.split(\"/\", 1)\n        client = storage.Client()\n        bucket = client.bucket(bucket_name)\n        blobs = bucket.list_blobs(prefix=prefix)\n        for blob in blobs:\n            rel_path = blob.name[len(prefix):]\n            local_path = os.path.join(local_dir, rel_path)\n            os.makedirs(os.path.dirname(local_path), exist_ok=True)\n            if not blob.name.endswith(\"/\"):\n                blob.download_to_filename(local_path)\n        print(f\"Downloaded {gcs_uri} -> {local_dir}\")\n\n    download_gcs_prefix(gcs_dataset_uri, \"/tmp/librispeech\")\n\n    # --- Charger le test split ---\n    with open(os.path.join(test_split.path, \"test.json\")) as f:\n        test_items = json.load(f)\n    print(f\"Test: {len(test_items)} utterances\")\n\n    # --- Charger le mod\u00e8le ---\n    encoder = EncoderClassifier.from_hparams(\n        source=\"speechbrain/spkrec-ecapa-voxceleb\",\n        savedir=LOCAL_MODEL_DIR,\n    )\n    encoder.mods.embedding_model.load_state_dict(\n        torch.load(os.path.join(model.path, \"encoder.pt\"), map_location=DEVICE)\n    )\n    encoder.mods = encoder.mods.to(DEVICE)\n    encoder.mods.embedding_model.eval()\n\n\n    # --- T\u00e9l\u00e9charger les donn\u00e9es depuis GCS ---\n    def download_gcs_prefix(gcs_uri, local_dir):\n        uri = gcs_uri.replace(\"gs://\", \"\")\n        bucket_name, prefix = uri.split(\"/\", 1)\n        client = storage.Client()\n        bucket = client.bucket(bucket_name)\n        blobs = bucket.list_blobs(prefix=prefix)\n        for blob in blobs:\n            rel_path = blob.name[len(prefix):]\n            local_path = os.path.join(local_dir, rel_path)\n            os.makedirs(os.path.dirname(local_path), exist_ok=True)\n            if not blob.name.endswith(\"/\"):\n                blob.download_to_filename(local_path)\n        print(f\"Downloaded {gcs_uri} -> {local_dir}\")\n\n    download_gcs_prefix(gcs_dataset_uri, \"/tmp/librispeech\")\n    # --- Utilitaires ---\n    def load_audio_mono_16k(path, max_seconds=6.0):\n        signal, sr = sf.read(path, dtype=\"float32\")\n        if len(signal.shape) == 2:\n            signal = signal.mean(axis=1)\n        signal = torch.tensor(signal).unsqueeze(0)\n        if sr != 16000:\n            signal = torchaudio.transforms.Resample(sr, 16000)(signal)\n        max_len = int(max_seconds * 16000)\n        if signal.shape[1] > max_len:\n            signal = signal[:, :max_len]\n        return signal\n\n    def extract_embedding(path):\n        signal = load_audio_mono_16k(path).to(DEVICE)\n        lengths = torch.tensor([1.0], device=DEVICE)\n        with torch.no_grad():\n            feats = encoder.mods.compute_features(signal)\n            feats = encoder.mods.mean_var_norm(feats, lengths)\n            emb = encoder.mods.embedding_model(feats, lengths)\n        return F.normalize(emb.squeeze(), dim=0).cpu().numpy()\n\n    # --- Extraire embeddings par speaker ---\n    by_spk = defaultdict(list)\n    for item in test_items:\n        by_spk[item[\"speaker\"]].append(item[\"wav\"])\n\n    speakers_embeddings = {}\n    for spk, paths in by_spk.items():\n        embs = [extract_embedding(p) for p in paths]\n        if embs:\n            speakers_embeddings[spk] = np.array(embs)\n\n    print(f\"Evaluation sur {len(speakers_embeddings)} speakers\")\n\n    # --- Calculer EER ---\n    intra, inter = [], []\n    spk_list = list(speakers_embeddings.values())\n    for i, e in enumerate(spk_list):\n        if len(e) < 2:\n            continue\n        sim = cosine_similarity(e)\n        n = sim.shape[0]\n        intra.extend(sim[np.triu_indices(n, k=1)])\n        for j in range(i+1, len(spk_list)):\n            inter.extend(cosine_similarity(e, spk_list[j]).ravel())\n\n    if not intra or not inter:\n        print(\"Pas assez de donn\u00e9es pour calculer EER\")\n        metrics.log_metric(\"eer\", -1.0)\n        return\n\n    scores = np.concatenate([np.array(intra), np.array(inter)])\n    labels = np.concatenate([np.ones(len(intra)), np.zeros(len(inter))])\n\n    fpr, tpr, thresholds = roc_curve(labels, scores, drop_intermediate=False)\n    roc_auc = float(auc(fpr, tpr))\n    eer_idx = np.nanargmin(np.abs(fpr - (1 - tpr)))\n    eer = float((fpr[eer_idx] + (1 - tpr[eer_idx])) / 2)\n\n    print(f\"EER={eer:.4f}, AUC={roc_auc:.4f}\")\n\n    metrics.log_metric(\"eer\", eer)\n    metrics.log_metric(\"auc\", roc_auc)\n    metrics.log_metric(\"num_test_speakers\", len(speakers_embeddings))\n\n"
+          ],
+          "image": "europe-west1-docker.pkg.dev/info9023-project-hearedit/hearedit-pipeline/pipeline-base:latest"
+        }
+      },
+      "exec-training": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "training"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef training(\n    train_split: Input[Dataset],\n    val_split: Input[Dataset],\n    gcs_dataset_uri: str,\n    model: Output[Model],\n    metrics: Output[Metrics],\n    epochs: int = 20,\n    batch_size: int = 16,\n):\n    import os, json, random\n    import torch\n    import torch.nn as nn\n    import torch.nn.functional as F\n    import torch.optim as optim\n    import torchaudio\n    import soundfile as sf\n    from torch.utils.data import DataLoader, Dataset as TorchDataset\n    from google.cloud import storage\n\n    if not hasattr(torchaudio, \"list_audio_backends\"):\n        torchaudio.list_audio_backends = lambda: [\"soundfile\"]\n    if not hasattr(torchaudio, \"set_audio_backend\"):\n        torchaudio.set_audio_backend = lambda *a, **k: None\n\n    from speechbrain.inference.speaker import EncoderClassifier\n\n    DEVICE = \"cuda:0\" if torch.cuda.is_available() else \"cpu\"\n    LOCAL_MODEL_DIR = \"/tmp/ecapa_model\"\n\n    # --- T\u00e9l\u00e9charger les donn\u00e9es depuis GCS ---\n    def download_gcs_prefix(gcs_uri, local_dir):\n        uri = gcs_uri.replace(\"gs://\", \"\")\n        bucket_name, prefix = uri.split(\"/\", 1)\n        client = storage.Client()\n        bucket = client.bucket(bucket_name)\n        blobs = bucket.list_blobs(prefix=prefix)\n        for blob in blobs:\n            rel_path = blob.name[len(prefix):]\n            local_path = os.path.join(local_dir, rel_path)\n            os.makedirs(os.path.dirname(local_path), exist_ok=True)\n            if not blob.name.endswith(\"/\"):\n                blob.download_to_filename(local_path)\n        print(f\"Downloaded {gcs_uri} -> {local_dir}\")\n\n    download_gcs_prefix(gcs_dataset_uri, \"/tmp/librispeech\")\n\n    # --- Charger les splits ---\n    with open(os.path.join(train_split.path, \"train.json\")) as f:\n        train_items = json.load(f)\n    with open(os.path.join(val_split.path, \"val.json\")) as f:\n        val_items = json.load(f)\n\n    print(f\"Train: {len(train_items)} utterances\")\n    print(f\"Val:   {len(val_items)} utterances\")\n\n    # --- Construire le mapping speaker ---\n    spk_to_idx = {s: i for i, s in enumerate(sorted({x[\"speaker\"] for x in train_items}))}\n    val_items = [x for x in val_items if x[\"speaker\"] in spk_to_idx]\n\n    print(f\"Speakers: {len(spk_to_idx)}\")\n\n    # --- ArcFace Loss ---\n    class ArcFaceLoss(nn.Module):\n        def __init__(self, emb_dim, num_speakers, s=30.0, m=0.5):\n            super().__init__()\n            self.s = s\n            self.m = m\n            self.weight = nn.Parameter(torch.FloatTensor(num_speakers, emb_dim))\n            nn.init.xavier_uniform_(self.weight)\n\n        def forward(self, emb, labels):\n            emb = F.normalize(emb, dim=1)\n            W = F.normalize(self.weight, dim=1)\n            cos_theta = torch.mm(emb, W.t()).clamp(-1 + 1e-7, 1 - 1e-7)\n            theta = torch.acos(cos_theta)\n            theta_m = theta + self.m\n            cos_theta_m = torch.cos(theta_m)\n            one_hot = torch.zeros_like(cos_theta)\n            one_hot.scatter_(1, labels.view(-1, 1), 1)\n            logits = one_hot * cos_theta_m + (1 - one_hot) * cos_theta\n            logits *= self.s\n            return F.cross_entropy(logits, labels)\n\n    # --- Utilitaires ---\n    def load_audio_mono_16k(path, max_seconds=6.0):\n        signal, sr = sf.read(path, dtype=\"float32\")\n        if len(signal.shape) == 2:\n            signal = signal.mean(axis=1)\n        signal = torch.tensor(signal).unsqueeze(0)\n        if sr != 16000:\n            signal = torchaudio.transforms.Resample(sr, 16000)(signal)\n        max_len = int(max_seconds * 16000)\n        if signal.shape[1] > max_len:\n            signal = signal[:, :max_len]\n        return signal\n\n    # --- Dataset ---\n    class SpeakerDataset(TorchDataset):\n        def __init__(self, items, spk_to_idx):\n            self.items = items\n            self.spk_to_idx = spk_to_idx\n\n        def __len__(self):\n            return len(self.items)\n\n        def __getitem__(self, idx):\n            item = self.items[idx]\n            signal = load_audio_mono_16k(item[\"wav\"]).squeeze(0)\n            label = torch.tensor(self.spk_to_idx[item[\"speaker\"]], dtype=torch.long)\n            return signal, label\n\n    def collate_fn(batch):\n        signals, labels = zip(*batch, strict=False)\n        lengths = [x.shape[0] for x in signals]\n        max_len = max(lengths)\n        padded = [torch.nn.functional.pad(x, (0, max_len - x.shape[0])) for x in signals]\n        rel_lengths = torch.tensor([l / max_len for l in lengths])\n        return torch.stack(padded), rel_lengths, torch.stack(labels)\n\n    train_loader = DataLoader(SpeakerDataset(train_items, spk_to_idx),\n                              batch_size=batch_size, shuffle=True, collate_fn=collate_fn)\n    val_loader   = DataLoader(SpeakerDataset(val_items, spk_to_idx),\n                              batch_size=batch_size, collate_fn=collate_fn)\n\n    # --- Charger encodeur ---\n    encoder = EncoderClassifier.from_hparams(\n        source=\"speechbrain/spkrec-ecapa-voxceleb\",\n        savedir=LOCAL_MODEL_DIR,\n    )\n    encoder.mods = encoder.mods.to(DEVICE)\n\n    # D\u00e9tecter dimension embedding\n    tmp = load_audio_mono_16k(train_items[0][\"wav\"]).to(DEVICE)\n    tmp_len = torch.tensor([1.0], device=DEVICE)\n    with torch.no_grad():\n        feats = encoder.mods.compute_features(tmp)\n        feats = encoder.mods.mean_var_norm(feats, tmp_len)\n        emb = encoder.mods.embedding_model(feats, tmp_len)\n    emb_dim = emb.squeeze().shape[-1]\n    print(f\"Embedding dim: {emb_dim}\")\n\n    # --- ArcFace + optimizer ---\n    criterion = ArcFaceLoss(emb_dim, len(spk_to_idx)).to(DEVICE)\n    optimizer = optim.Adam([\n        {\"params\": encoder.mods.embedding_model.parameters(), \"lr\": 3e-6},\n        {\"params\": criterion.parameters(), \"lr\": 5e-4},\n    ])\n\n    # --- Entra\u00eenement ---\n    print(f\"D\u00e9but de l'entra\u00eenement sur {DEVICE}\")\n    print(f\"Nb batches train: {len(train_loader)}\")\n    best_val_acc = 0.0\n    for epoch in range(epochs):\n        print(f\"D\u00e9but epoch {epoch+1}/{epochs}\")\n        encoder.mods.embedding_model.train()\n        criterion.train()\n        total_loss = 0.0\n        for i, (signals, lengths, labels) in enumerate(train_loader):\n            if i == 0:\n                print(f\"Premier batch OK \u2014 shape: {signals.shape}\")\n            signals, lengths, labels = signals.to(DEVICE), lengths.to(DEVICE), labels.to(DEVICE)\n            optimizer.zero_grad()\n            feats = encoder.mods.compute_features(signals)\n            feats = encoder.mods.mean_var_norm(feats, lengths)\n            emb = encoder.mods.embedding_model(feats, lengths).squeeze(1)\n            loss = criterion(emb, labels)\n            loss.backward()\n            optimizer.step()\n            total_loss += loss.item()\n\n        avg_loss = total_loss / len(train_loader)\n\n        encoder.mods.embedding_model.eval()\n        criterion.eval()\n        correct, total = 0, 0\n        with torch.no_grad():\n            for signals, lengths, labels in val_loader:\n                signals, lengths, labels = signals.to(DEVICE), lengths.to(DEVICE), labels.to(DEVICE)\n                feats = encoder.mods.compute_features(signals)\n                feats = encoder.mods.mean_var_norm(feats, lengths)\n                emb = encoder.mods.embedding_model(feats, lengths).squeeze(1)\n                emb_norm = F.normalize(emb, dim=1)\n                W_norm = F.normalize(criterion.weight, dim=1)\n                cos_sim = torch.mm(emb_norm, W_norm.t())\n                preds = cos_sim.argmax(dim=1)\n                correct += (preds == labels).sum().item()\n                total += labels.size(0)\n\n        val_acc = correct / max(1, total)\n        print(f\"Epoch {epoch+1}/{epochs} \u2014 train_loss={avg_loss:.4f} val_acc={val_acc:.4f}\")\n        metrics.log_metric(f\"train_loss_epoch_{epoch+1}\", avg_loss)\n        metrics.log_metric(f\"val_acc_epoch_{epoch+1}\", val_acc)\n\n        if val_acc > best_val_acc:\n            best_val_acc = val_acc\n            os.makedirs(model.path, exist_ok=True)\n            torch.save(encoder.mods.embedding_model.state_dict(),\n                       os.path.join(model.path, \"encoder.pt\"))\n            torch.save({\"spk_to_idx\": spk_to_idx},\n                       os.path.join(model.path, \"speaker_labels.pt\"))\n            print(f\"  \u2192 Meilleurs poids sauvegard\u00e9s (val_acc={val_acc:.4f})\")\n\n    metrics.log_metric(\"best_val_acc\", best_val_acc)\n    metrics.log_metric(\"num_speakers\", len(spk_to_idx))\n    print(f\"Training done. best_val_acc={best_val_acc:.4f}\")\n\n"
+          ],
+          "image": "europe-west1-docker.pkg.dev/info9023-project-hearedit/hearedit-pipeline/pipeline-base:latest",
+          "resources": {
+            "accelerator": {
+              "count": "1",
+              "resourceCount": "1",
+              "resourceType": "NVIDIA_TESLA_T4",
+              "type": "NVIDIA_TESLA_T4"
+            },
+            "cpuLimit": 4.0,
+            "memoryLimit": 15.0,
+            "resourceCpuLimit": "4",
+            "resourceMemoryLimit": "15G"
+          }
+        }
+      }
+    }
+  },
+  "pipelineInfo": {
+    "name": "hearedit-pipeline"
+  },
+  "root": {
+    "dag": {
+      "tasks": {
+        "compute-threshold": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-compute-threshold"
+          },
+          "dependentTasks": [
+            "evaluation",
+            "training"
+          ],
+          "inputs": {
+            "artifacts": {
+              "model": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "model",
+                  "producerTask": "training"
+                }
+              }
+            },
+            "parameters": {
+              "gcs_dataset_uri": {
+                "componentInputParameter": "gcs_dataset_uri"
+              },
+              "gcs_threshold_output_uri": {
+                "componentInputParameter": "gcs_threshold_output_uri"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "compute-threshold"
+          }
+        },
+        "data-preparation": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-data-preparation"
+          },
+          "inputs": {
+            "parameters": {
+              "gcs_dataset_uri": {
+                "componentInputParameter": "gcs_dataset_uri"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "data-preparation"
+          }
+        },
+        "evaluation": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-evaluation"
+          },
+          "dependentTasks": [
+            "data-preparation",
+            "training"
+          ],
+          "inputs": {
+            "artifacts": {
+              "model": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "model",
+                  "producerTask": "training"
+                }
+              },
+              "test_split": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "test_split",
+                  "producerTask": "data-preparation"
+                }
+              }
+            },
+            "parameters": {
+              "gcs_dataset_uri": {
+                "componentInputParameter": "gcs_dataset_uri"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "evaluation"
+          }
+        },
+        "training": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-training"
+          },
+          "dependentTasks": [
+            "data-preparation"
+          ],
+          "inputs": {
+            "artifacts": {
+              "train_split": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "train_split",
+                  "producerTask": "data-preparation"
+                }
+              },
+              "val_split": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "val_split",
+                  "producerTask": "data-preparation"
+                }
+              }
+            },
+            "parameters": {
+              "batch_size": {
+                "componentInputParameter": "batch_size"
+              },
+              "epochs": {
+                "componentInputParameter": "epochs"
+              },
+              "gcs_dataset_uri": {
+                "componentInputParameter": "gcs_dataset_uri"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "training"
+          }
+        }
+      }
+    },
+    "inputDefinitions": {
+      "parameters": {
+        "batch_size": {
+          "defaultValue": 8.0,
+          "isOptional": true,
+          "parameterType": "NUMBER_INTEGER"
+        },
+        "epochs": {
+          "defaultValue": 5.0,
+          "isOptional": true,
+          "parameterType": "NUMBER_INTEGER"
+        },
+        "gcs_dataset_uri": {
+          "defaultValue": "gs://mlops-2026-dataset-bucket/train-clean-100/train-clean-100/",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "gcs_threshold_output_uri": {
+          "defaultValue": "gs://hearedit-models/artifacts/threshold_pipeline.json",
+          "isOptional": true,
+          "parameterType": "STRING"
+        }
+      }
+    }
+  },
+  "schemaVersion": "2.1.0",
+  "sdkVersion": "kfp-2.16.0"
+}
