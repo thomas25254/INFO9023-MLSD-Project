@@ -1,6 +1,7 @@
 from kfp.dsl import component, Input, Output, Model, Metrics
 from config import BASE_IMAGE
 
+
 @component(base_image=BASE_IMAGE)
 def compute_threshold(
     gcs_dataset_uri: str,
@@ -9,6 +10,7 @@ def compute_threshold(
     metrics: Output[Metrics],
 ):
     import json, os
+    import random
     import numpy as np
     import torch
     import torch.nn.functional as F
@@ -88,7 +90,15 @@ def compute_threshold(
                 parts = os.path.join(root, f).replace("\\", "/").split("/")
                 speaker_id = parts[-3]
                 by_spk[speaker_id].append(os.path.join(root, f))
+    # Limiter à 3000 fichiers pour éviter OOM
 
+    all_files = [(spk, path) for spk, paths in by_spk.items() for path in paths]
+    random.shuffle(all_files)
+    all_files = all_files[:3000]
+    by_spk = defaultdict(list)
+    for spk, path in all_files:
+        by_spk[spk].append(path)
+    print(f"Limité à {len(all_files)} fichiers pour le calcul du threshold")
     speakers_embeddings = {}
     for spk, paths in by_spk.items():
         embs = [extract_embedding(p) for p in paths]
