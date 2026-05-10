@@ -277,14 +277,20 @@ Deployment guide → [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 
 ## CI/CD
 
-The pipeline is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on every pull request targeting `main` or `develop`.
+The pipeline is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). CI runs on every pull request targeting `main` or `develop`.
 
-| Step | Tool | What it checks |
+Tests are intentionally lightweight: they require no models or audio files and run in seconds on any CI machine.
+
+| Jobs | Tool | What it checks |
 |------|------|----------------|
 | Pre-commit | `pre-commit` + `ruff` | Code formatting, trailing whitespace, import sorting |
 | Unit tests | `pytest` | Pure ML logic — normalize, IQR filter, EER, cosine similarity |
 
-Tests are intentionally lightweight: they require no models or audio files and run in seconds on any CI machine.
+CD deploys the image in google cloud when pushing to `main`.
+ 
+| Jobs | Tool | What it checks |
+|------|------|----------------|
+| Deploy | `gcloud` | Authenticate, build and push Docker image. Run deploy |
 
 ---
 
