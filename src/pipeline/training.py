@@ -1,5 +1,6 @@
-from kfp.dsl import component, Input, Output, Dataset, Model, Metrics
 from config import BASE_IMAGE
+from kfp.dsl import Dataset, Input, Metrics, Model, Output, component
+
 
 @component(base_image=BASE_IMAGE)
 def training(
@@ -11,15 +12,18 @@ def training(
     epochs: int = 20,
     batch_size: int = 16,
 ):
-    import os, json, random
+    import json
+    import os
+
+    import soundfile as sf
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
     import torch.optim as optim
     import torchaudio
-    import soundfile as sf
-    from torch.utils.data import DataLoader, Dataset as TorchDataset
     from google.cloud import storage
+    from torch.utils.data import DataLoader
+    from torch.utils.data import Dataset as TorchDataset
 
     if not hasattr(torchaudio, "list_audio_backends"):
         torchaudio.list_audio_backends = lambda: ["soundfile"]
@@ -39,7 +43,7 @@ def training(
         bucket = client.bucket(bucket_name)
         blobs = bucket.list_blobs(prefix=prefix)
         for blob in blobs:
-            rel_path = blob.name[len(prefix):]
+            rel_path = blob.name[len(prefix) :]
             local_path = os.path.join(local_dir, rel_path)
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             if not blob.name.endswith("/"):
@@ -58,7 +62,9 @@ def training(
     print(f"Val:   {len(val_items)} utterances")
 
     # --- Construire le mapping speaker ---
-    spk_to_idx = {s: i for i, s in enumerate(sorted({x["speaker"] for x in train_items}))}
+    spk_to_idx = {
+        s: i for i, s in enumerate(sorted({x["speaker"] for x in train_items}))
+    }
     val_items = [x for x in val_items if x["speaker"] in spk_to_idx]
 
     print(f"Speakers: {len(spk_to_idx)}")
@@ -117,14 +123,23 @@ def training(
         signals, labels = zip(*batch, strict=False)
         lengths = [x.shape[0] for x in signals]
         max_len = max(lengths)
-        padded = [torch.nn.functional.pad(x, (0, max_len - x.shape[0])) for x in signals]
-        rel_lengths = torch.tensor([l / max_len for l in lengths])
+        padded = [
+            torch.nn.functional.pad(x, (0, max_len - x.shape[0])) for x in signals
+        ]
+        rel_lengths = torch.tensor([length / max_len for length in lengths])
         return torch.stack(padded), rel_lengths, torch.stack(labels)
 
-    train_loader = DataLoader(SpeakerDataset(train_items, spk_to_idx),
-                              batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
-    val_loader   = DataLoader(SpeakerDataset(val_items, spk_to_idx),
-                              batch_size=batch_size, collate_fn=collate_fn)
+    train_loader = DataLoader(
+        SpeakerDataset(train_items, spk_to_idx),
+        batch_size=batch_size,
+        shuffle=True,
+        collate_fn=collate_fn,
+    )
+    val_loader = DataLoader(
+        SpeakerDataset(val_items, spk_to_idx),
+        batch_size=batch_size,
+        collate_fn=collate_fn,
+    )
 
     # --- Charger encodeur ---
     encoder = EncoderClassifier.from_hparams(
@@ -145,24 +160,30 @@ def training(
 
     # --- ArcFace + optimizer ---
     criterion = ArcFaceLoss(emb_dim, len(spk_to_idx)).to(DEVICE)
-    optimizer = optim.Adam([
-        {"params": encoder.mods.embedding_model.parameters(), "lr": 3e-6},
-        {"params": criterion.parameters(), "lr": 5e-4},
-    ])
+    optimizer = optim.Adam(
+        [
+            {"params": encoder.mods.embedding_model.parameters(), "lr": 3e-6},
+            {"params": criterion.parameters(), "lr": 5e-4},
+        ]
+    )
 
     # --- Entraînement ---
     print(f"Début de l'entraînement sur {DEVICE}")
     print(f"Nb batches train: {len(train_loader)}")
     best_val_acc = 0.0
     for epoch in range(epochs):
-        print(f"Début epoch {epoch+1}/{epochs}")
+        print(f"Début epoch {epoch + 1}/{epochs}")
         encoder.mods.embedding_model.train()
         criterion.train()
         total_loss = 0.0
         for i, (signals, lengths, labels) in enumerate(train_loader):
             if i == 0:
                 print(f"Premier batch OK — shape: {signals.shape}")
-            signals, lengths, labels = signals.to(DEVICE), lengths.to(DEVICE), labels.to(DEVICE)
+            signals, lengths, labels = (
+                signals.to(DEVICE),
+                lengths.to(DEVICE),
+                labels.to(DEVICE),
+            )
             optimizer.zero_grad()
             feats = encoder.mods.compute_features(signals)
             feats = encoder.mods.mean_var_norm(feats, lengths)
@@ -179,7 +200,11 @@ def training(
         correct, total = 0, 0
         with torch.no_grad():
             for signals, lengths, labels in val_loader:
-                signals, lengths, labels = signals.to(DEVICE), lengths.to(DEVICE), labels.to(DEVICE)
+                signals, lengths, labels = (
+                    signals.to(DEVICE),
+                    lengths.to(DEVICE),
+                    labels.to(DEVICE),
+                )
                 feats = encoder.mods.compute_features(signals)
                 feats = encoder.mods.mean_var_norm(feats, lengths)
                 emb = encoder.mods.embedding_model(feats, lengths).squeeze(1)
@@ -191,17 +216,23 @@ def training(
                 total += labels.size(0)
 
         val_acc = correct / max(1, total)
-        print(f"Epoch {epoch+1}/{epochs} — train_loss={avg_loss:.4f} val_acc={val_acc:.4f}")
-        metrics.log_metric(f"train_loss_epoch_{epoch+1}", avg_loss)
-        metrics.log_metric(f"val_acc_epoch_{epoch+1}", val_acc)
+        print(
+            f"Epoch {epoch + 1}/{epochs} — train_loss={avg_loss:.4f} val_acc={val_acc:.4f}"
+        )
+        metrics.log_metric(f"train_loss_epoch_{epoch + 1}", avg_loss)
+        metrics.log_metric(f"val_acc_epoch_{epoch + 1}", val_acc)
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             os.makedirs(model.path, exist_ok=True)
-            torch.save(encoder.mods.embedding_model.state_dict(),
-                       os.path.join(model.path, "encoder.pt"))
-            torch.save({"spk_to_idx": spk_to_idx},
-                       os.path.join(model.path, "speaker_labels.pt"))
+            torch.save(
+                encoder.mods.embedding_model.state_dict(),
+                os.path.join(model.path, "encoder.pt"),
+            )
+            torch.save(
+                {"spk_to_idx": spk_to_idx},
+                os.path.join(model.path, "speaker_labels.pt"),
+            )
             print(f"  → Meilleurs poids sauvegardés (val_acc={val_acc:.4f})")
 
     metrics.log_metric("best_val_acc", best_val_acc)

@@ -1,5 +1,6 @@
-from kfp.dsl import component, Input, Output, Model, Metrics
 from config import BASE_IMAGE
+from kfp.dsl import Input, Metrics, Model, Output, component
+
 
 
 @component(base_image=BASE_IMAGE)
@@ -9,17 +10,18 @@ def compute_threshold(
     model: Input[Model],
     metrics: Output[Metrics],
 ):
-    import json, os
-    import random
+    import json
+    import os
+    from collections import defaultdict
+
     import numpy as np
+    import soundfile as sf
     import torch
     import torch.nn.functional as F
     import torchaudio
-    import soundfile as sf
-    from collections import defaultdict
+    from google.cloud import storage
     from sklearn.metrics import auc, roc_curve
     from sklearn.metrics.pairwise import cosine_similarity
-    from google.cloud import storage
 
     if not hasattr(torchaudio, "list_audio_backends"):
         torchaudio.list_audio_backends = lambda: ["soundfile"]
@@ -40,7 +42,7 @@ def compute_threshold(
         bucket = client.bucket(bucket_name)
         blobs = bucket.list_blobs(prefix=prefix)
         for blob in blobs:
-            rel_path = blob.name[len(prefix):]
+            rel_path = blob.name[len(prefix) :]
             local_path = os.path.join(local_dir, rel_path)
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             if not blob.name.endswith("/"):
@@ -118,7 +120,7 @@ def compute_threshold(
         sim = cosine_similarity(e)
         n = sim.shape[0]
         intra.extend(sim[np.triu_indices(n, k=1)])
-        for j in range(i+1, len(filtered)):
+        for j in range(i + 1, len(filtered)):
             inter.extend(cosine_similarity(e, filtered[j]).ravel())
 
     scores = np.concatenate([np.array(intra), np.array(inter)])

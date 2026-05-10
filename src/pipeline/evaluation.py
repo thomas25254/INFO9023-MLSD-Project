@@ -1,5 +1,6 @@
-from kfp.dsl import component, Input, Output, Dataset, Model, Metrics
 from config import BASE_IMAGE
+from kfp.dsl import Dataset, Input, Metrics, Model, Output, component
+
 
 @component(base_image=BASE_IMAGE)
 def evaluation(
@@ -8,13 +9,15 @@ def evaluation(
     metrics: Output[Metrics],
     gcs_dataset_uri: str,
 ):
-    import os, json
+    import json
+    import os
+    from collections import defaultdict
+
+    import numpy as np
+    import soundfile as sf
     import torch
     import torch.nn.functional as F
     import torchaudio
-    import soundfile as sf
-    import numpy as np
-    from collections import defaultdict
     from sklearn.metrics import auc, roc_curve
     from sklearn.metrics.pairwise import cosine_similarity
 
@@ -23,12 +26,12 @@ def evaluation(
     if not hasattr(torchaudio, "set_audio_backend"):
         torchaudio.set_audio_backend = lambda *a, **k: None
 
-    from speechbrain.inference.speaker import EncoderClassifier
     from google.cloud import storage
+    from speechbrain.inference.speaker import EncoderClassifier
 
     DEVICE = "cpu"
     LOCAL_MODEL_DIR = "/tmp/ecapa_model"
-    
+
     def download_gcs_prefix(gcs_uri, local_dir):
         uri = gcs_uri.replace("gs://", "")
         bucket_name, prefix = uri.split("/", 1)
@@ -36,7 +39,7 @@ def evaluation(
         bucket = client.bucket(bucket_name)
         blobs = bucket.list_blobs(prefix=prefix)
         for blob in blobs:
-            rel_path = blob.name[len(prefix):]
+            rel_path = blob.name[len(prefix) :]
             local_path = os.path.join(local_dir, rel_path)
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             if not blob.name.endswith("/"):
@@ -44,7 +47,7 @@ def evaluation(
         print(f"Downloaded {gcs_uri} -> {local_dir}")
 
     download_gcs_prefix(gcs_dataset_uri, "/tmp/librispeech")
-    
+
     # --- Charger le test split ---
     with open(os.path.join(test_split.path, "test.json")) as f:
         test_items = json.load(f)
@@ -61,7 +64,6 @@ def evaluation(
     encoder.mods = encoder.mods.to(DEVICE)
     encoder.mods.embedding_model.eval()
 
-
     # --- Télécharger les données depuis GCS ---
     def download_gcs_prefix(gcs_uri, local_dir):
         uri = gcs_uri.replace("gs://", "")
@@ -70,7 +72,7 @@ def evaluation(
         bucket = client.bucket(bucket_name)
         blobs = bucket.list_blobs(prefix=prefix)
         for blob in blobs:
-            rel_path = blob.name[len(prefix):]
+            rel_path = blob.name[len(prefix) :]
             local_path = os.path.join(local_dir, rel_path)
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             if not blob.name.endswith("/"):
@@ -78,6 +80,7 @@ def evaluation(
         print(f"Downloaded {gcs_uri} -> {local_dir}")
 
     download_gcs_prefix(gcs_dataset_uri, "/tmp/librispeech")
+
     # --- Utilitaires ---
     def load_audio_mono_16k(path, max_seconds=6.0):
         signal, sr = sf.read(path, dtype="float32")
@@ -122,7 +125,7 @@ def evaluation(
         sim = cosine_similarity(e)
         n = sim.shape[0]
         intra.extend(sim[np.triu_indices(n, k=1)])
-        for j in range(i+1, len(spk_list)):
+        for j in range(i + 1, len(spk_list)):
             inter.extend(cosine_similarity(e, spk_list[j]).ravel())
 
     if not intra or not inter:

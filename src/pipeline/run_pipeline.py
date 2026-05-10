@@ -1,15 +1,13 @@
-from kfp import dsl, compiler
-from google.cloud import aiplatform
-from config import PROJECT_ID, LOCATION, PIPELINE_ROOT
+from config import LOCATION, PIPELINE_ROOT, PROJECT_ID
 from data_preparation import data_preparation
-from training import training
 from evaluation import evaluation
+from google.cloud import aiplatform
+from kfp import compiler, dsl
 from threshold import compute_threshold
+from training import training
 
-@dsl.pipeline(
-    name="hearedit-pipeline",
-    pipeline_root=PIPELINE_ROOT
-)
+
+@dsl.pipeline(name="hearedit-pipeline", pipeline_root=PIPELINE_ROOT)
 def hearedit_pipeline(
     gcs_dataset_uri: str = "gs://mlops-2026-dataset-bucket/train-clean-100/train-clean-100/",
     gcs_threshold_output_uri: str = "gs://hearedit-models/artifacts/threshold_pipeline.json",
@@ -33,7 +31,7 @@ def hearedit_pipeline(
     training_task.set_accelerator_limit(1)
     training_task.set_memory_limit("15G")
     training_task.set_cpu_limit("4")
-        # Etape 3 - Evaluation sur CPU
+    # Etape 3 - Evaluation sur CPU
     evaluation_task = evaluation(
         test_split=data_prep_task.outputs["test_split"],
         model=training_task.outputs["model"],

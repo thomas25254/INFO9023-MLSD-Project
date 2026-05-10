@@ -1,16 +1,19 @@
-import os
-import json
 import glob
+import json
+import os
 import random
 from collections import defaultdict
+
 
 # ============================================================
 # TEST DATA PREPARATION
 # ============================================================
 def test_data_preparation():
     print("=== TEST DATA PREPARATION ===")
-    
-    LOCAL_DATA = "/home/alexandre/Documents/2025-2026/Q2/MLSD/Project/LibriSpeech/dev-clean"
+
+    LOCAL_DATA = (
+        "/home/alexandre/Documents/2025-2026/Q2/MLSD/Project/LibriSpeech/dev-clean"
+    )
     OUTPUT_DIR = "/tmp/test_pipeline"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -31,15 +34,15 @@ def test_data_preparation():
         by_spk[item["speaker"]].append(item)
 
     train_items, val_items, test_items = [], [], []
-    for spk, utts in by_spk.items():
+    for _spk, utts in by_spk.items():
         if len(utts) < 3:
             continue
         random.shuffle(utts)
         n_train = max(1, int(len(utts) * 0.8))
-        n_val   = max(1, int(len(utts) * 0.1))
+        n_val = max(1, int(len(utts) * 0.1))
         train_items.extend(utts[:n_train])
-        val_items.extend(utts[n_train:n_train + n_val])
-        test_items.extend(utts[n_train + n_val:])
+        val_items.extend(utts[n_train : n_train + n_val])
+        test_items.extend(utts[n_train + n_val :])
 
     print(f"Train: {len(train_items)}, Val: {len(val_items)}, Test: {len(test_items)}")
 
@@ -60,14 +63,15 @@ def test_data_preparation():
 def test_training(split_dir):
     print("\n=== TEST TRAINING ===")
 
+    import soundfile as sf
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
     import torch.optim as optim
     import torchaudio
-    import soundfile as sf
-    from torch.utils.data import DataLoader, Dataset as TorchDataset
     from speechbrain.inference.speaker import EncoderClassifier
+    from torch.utils.data import DataLoader
+    from torch.utils.data import Dataset as TorchDataset
 
     if not hasattr(torchaudio, "list_audio_backends"):
         torchaudio.list_audio_backends = lambda: ["soundfile"]
@@ -86,10 +90,14 @@ def test_training(split_dir):
     train_items = train_items[:50]
     val_items = val_items[:10]
 
-    spk_to_idx = {s: i for i, s in enumerate(sorted({x["speaker"] for x in train_items}))}
+    spk_to_idx = {
+        s: i for i, s in enumerate(sorted({x["speaker"] for x in train_items}))
+    }
     val_items = [x for x in val_items if x["speaker"] in spk_to_idx]
 
-    print(f"Train: {len(train_items)}, Val: {len(val_items)}, Speakers: {len(spk_to_idx)}")
+    print(
+        f"Train: {len(train_items)}, Val: {len(val_items)}, Speakers: {len(spk_to_idx)}"
+    )
 
     class ArcFaceLoss(nn.Module):
         def __init__(self, emb_dim, num_speakers, s=30.0, m=0.5):
@@ -128,8 +136,10 @@ def test_training(split_dir):
         def __init__(self, items, spk_to_idx):
             self.items = items
             self.spk_to_idx = spk_to_idx
+
         def __len__(self):
             return len(self.items)
+
         def __getitem__(self, idx):
             item = self.items[idx]
             signal = load_audio_mono_16k(item["wav"]).squeeze(0)
@@ -140,14 +150,18 @@ def test_training(split_dir):
         signals, labels = zip(*batch, strict=False)
         lengths = [x.shape[0] for x in signals]
         max_len = max(lengths)
-        padded = [torch.nn.functional.pad(x, (0, max_len - x.shape[0])) for x in signals]
-        rel_lengths = torch.tensor([l / max_len for l in lengths])
+        padded = [
+            torch.nn.functional.pad(x, (0, max_len - x.shape[0])) for x in signals
+        ]
+        rel_lengths = torch.tensor([length / max_len for length in lengths])
         return torch.stack(padded), rel_lengths, torch.stack(labels)
 
-    train_loader = DataLoader(SpeakerDataset(train_items, spk_to_idx),
-                              batch_size=4, shuffle=True, collate_fn=collate_fn)
-    val_loader   = DataLoader(SpeakerDataset(val_items, spk_to_idx),
-                              batch_size=4, collate_fn=collate_fn)
+    train_loader = DataLoader(
+        SpeakerDataset(train_items, spk_to_idx),
+        batch_size=4,
+        shuffle=True,
+        collate_fn=collate_fn,
+    )
 
     encoder = EncoderClassifier.from_hparams(
         source="speechbrain/spkrec-ecapa-voxceleb",
@@ -165,10 +179,12 @@ def test_training(split_dir):
     print(f"Embedding dim: {emb_dim}")
 
     criterion = ArcFaceLoss(emb_dim, len(spk_to_idx)).to(DEVICE)
-    optimizer = optim.Adam([
-        {"params": encoder.mods.embedding_model.parameters(), "lr": 3e-6},
-        {"params": criterion.parameters(), "lr": 5e-4},
-    ])
+    optimizer = optim.Adam(
+        [
+            {"params": encoder.mods.embedding_model.parameters(), "lr": 3e-6},
+            {"params": criterion.parameters(), "lr": 5e-4},
+        ]
+    )
 
     # 2 epochs seulement pour le test
     for epoch in range(2):
@@ -176,7 +192,11 @@ def test_training(split_dir):
         criterion.train()
         total_loss = 0.0
         for signals, lengths, labels in train_loader:
-            signals, lengths, labels = signals.to(DEVICE), lengths.to(DEVICE), labels.to(DEVICE)
+            signals, lengths, labels = (
+                signals.to(DEVICE),
+                lengths.to(DEVICE),
+                labels.to(DEVICE),
+            )
             optimizer.zero_grad()
             feats = encoder.mods.compute_features(signals)
             feats = encoder.mods.mean_var_norm(feats, lengths)
@@ -185,7 +205,7 @@ def test_training(split_dir):
             loss.backward()
             optimizer.step()
             total_loss += loss.item()
-        print(f"Epoch {epoch+1}/2 — train_loss={total_loss/len(train_loader):.4f}")
+        print(f"Epoch {epoch + 1}/2 — train_loss={total_loss / len(train_loader):.4f}")
 
     # Sauvegarder
     MODEL_DIR = "/tmp/test_pipeline/model"
@@ -203,12 +223,13 @@ def test_training(split_dir):
 def test_evaluation(split_dir, model_dir):
     print("\n=== TEST EVALUATION ===")
 
+    from collections import defaultdict
+
+    import numpy as np
+    import soundfile as sf
     import torch
     import torch.nn.functional as F
     import torchaudio
-    import soundfile as sf
-    import numpy as np
-    from collections import defaultdict
     from sklearn.metrics import auc, roc_curve
     from sklearn.metrics.pairwise import cosine_similarity
     from speechbrain.inference.speaker import EncoderClassifier
@@ -273,7 +294,7 @@ def test_evaluation(split_dir, model_dir):
         sim = cosine_similarity(e)
         n = sim.shape[0]
         intra.extend(sim[np.triu_indices(n, k=1)])
-        for j in range(i+1, len(spk_list)):
+        for j in range(i + 1, len(spk_list)):
             inter.extend(cosine_similarity(e, spk_list[j]).ravel())
 
     scores = np.concatenate([np.array(intra), np.array(inter)])
