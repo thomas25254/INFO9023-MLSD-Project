@@ -39,11 +39,12 @@ def hearedit_pipeline(
     )
 
     # Etape 4 - Threshold sur CPU
-    compute_threshold(
+    threshold_task = compute_threshold(
         gcs_dataset_uri=gcs_dataset_uri,
         gcs_threshold_output_uri=gcs_threshold_output_uri,
         model=training_task.outputs["model"],
     ).after(evaluation_task)
+    threshold_task.set_memory_limit("16G")
 
 
 if __name__ == "__main__":
