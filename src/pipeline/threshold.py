@@ -1,6 +1,7 @@
+import random
+
 from config import BASE_IMAGE
 from kfp.dsl import Input, Metrics, Model, Output, component
-
 
 
 @component(base_image=BASE_IMAGE)
