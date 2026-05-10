@@ -103,6 +103,7 @@ INFO9023-MLSD-Project/
 ├── slides/
 │   ├── milestone_1.pdf
 │   └── milestone_2.pdf
+│   └── milestone_3.pdf
 │
 ├── Dockerfile                       # Container definition for the API
 ├── requirements.txt                 # Dev/training dependencies
