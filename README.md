@@ -287,7 +287,7 @@ Tests are intentionally lightweight: they require no models or audio files and r
 | Unit tests | `pytest` | Pure ML logic — normalize, IQR filter, EER, cosine similarity |
 
 CD deploys the image in google cloud when pushing to `main`.
- 
+
 | Jobs | Tool | What it checks |
 |------|------|----------------|
 | Deploy | `gcloud` | Authenticate, build and push Docker image. Run deploy |
